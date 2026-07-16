@@ -46,13 +46,37 @@ function scheduleDuration(schedule) {
   return calculateDuration(parseTime(schedule.start), parseTime(schedule.end));
 }
 
-function capacityByType(type, dates) {
+function shiftMatchesSchedule(schedule, selectedShift) {
+  if (!selectedShift) return true;
+  const raw = normalize(`${schedule.shift} ${schedule.start} ${schedule.end}`);
+  if (selectedShift === "1") return raw.includes("1") || schedule.start === "05:00";
+  if (selectedShift === "2") return raw.includes("2") || schedule.start === "14:00";
+  if (selectedShift === "3") return raw.includes("3") || schedule.start === "21:00";
+  return true;
+}
+
+function capacityDetails(type, dates, filters = {}) {
   const settings = loadOperationalSettings();
-  if (type === "corte") return (settings.planningConnection.cuttingMachines || 14) * 24 * 3600 * dates.length;
-  const montageSeconds = settings.employeeSchedules
+  if (type === "corte") {
+    const machines = settings.planningConnection.cuttingMachines || 14;
+    const daySeconds = machines * 24 * 3600;
+    return {
+      seconds: daySeconds * dates.length,
+      formula: `${machines} maquinas x 24h x ${dates.length} dia(s)`,
+      perDay: daySeconds,
+      resources: machines
+    };
+  }
+  const schedules = settings.employeeSchedules
     .filter((schedule) => normalize(schedule.workType) === "MONTAGEM")
-    .reduce((sum, schedule) => sum + scheduleDuration(schedule), 0);
-  return montageSeconds * dates.length;
+    .filter((schedule) => shiftMatchesSchedule(schedule, filters.shift));
+  const montageSeconds = schedules.reduce((sum, schedule) => sum + scheduleDuration(schedule), 0);
+  return {
+    seconds: montageSeconds * dates.length,
+    formula: `${schedules.length} montador(es) com horarios cadastrados x ${dates.length} dia(s)`,
+    perDay: montageSeconds,
+    resources: schedules.length
+  };
 }
 
 function aggregatePlan(plans, type) {
@@ -73,11 +97,11 @@ function aggregateActual(records, type) {
   };
 }
 
-function comparisonRows(records, plans, dates) {
+function comparisonRows(records, plans, dates, filters = {}) {
   return ["montagem", "corte"].map((type) => {
     const planned = aggregatePlan(plans, type);
     const actual = aggregateActual(records, type);
-    const capacity = capacityByType(type, dates);
+    const capacity = capacityDetails(type, dates, filters);
     return {
       tipo: typeLabels[type],
       plannedQuantity: planned.quantity,
@@ -85,19 +109,22 @@ function comparisonRows(records, plans, dates) {
       quantityVariance: actual.quantity - planned.quantity,
       plannedSeconds: planned.seconds,
       actualSeconds: actual.seconds,
-      capacitySeconds: capacity,
-      capacityUse: safeDivide(planned.seconds, capacity) * 100,
-      actualCapacityUse: safeDivide(actual.seconds, capacity) * 100,
+      capacitySeconds: capacity.seconds,
+      capacityFormula: capacity.formula,
+      capacityPerDay: capacity.perDay,
+      capacityResources: capacity.resources,
+      capacityUse: safeDivide(planned.seconds, capacity.seconds) * 100,
+      actualCapacityUse: safeDivide(actual.seconds, capacity.seconds) * 100,
       timeVariance: actual.seconds - planned.seconds
     };
   });
 }
 
-function dailyRows(records, plans, dates) {
+function dailyRows(records, plans, dates, filters = {}) {
   return dates.flatMap((date) => ["montagem", "corte"].map((type) => {
     const dayPlans = plans.filter((plan) => plan.date === date && plan.type === type);
     const dayActual = productionRecords(records).filter((record) => record.date === date && record.sourceType === type);
-    const capacity = capacityByType(type, [date]);
+    const capacity = capacityDetails(type, [date], filters);
     const plannedSeconds = dayPlans.reduce((sum, plan) => sum + plan.theoreticalTotalSeconds, 0);
     const actualSeconds = dayActual.reduce((sum, record) => sum + record.realSeconds, 0);
     return {
@@ -107,9 +134,9 @@ function dailyRows(records, plans, dates) {
       actualQuantity: dayActual.reduce((sum, record) => sum + record.quantity, 0),
       plannedSeconds,
       actualSeconds,
-      capacitySeconds: capacity,
-      capacityUse: safeDivide(plannedSeconds, capacity) * 100,
-      actualCapacityUse: safeDivide(actualSeconds, capacity) * 100
+      capacitySeconds: capacity.seconds,
+      capacityUse: safeDivide(plannedSeconds, capacity.seconds) * 100,
+      actualCapacityUse: safeDivide(actualSeconds, capacity.seconds) * 100
     };
   }));
 }
@@ -126,6 +153,12 @@ function capacityCards(rows) {
   return `
     <section class="kpi-grid planning-kpis">
       ${rows.map((row) => `
+        <article class="kpi-card capacity-card">
+          <span>${row.tipo} disponivel</span>
+          <strong>${secondsToDuration(row.capacitySeconds)}</strong>
+          <small>${secondsToDuration(row.capacityPerDay)} por dia</small>
+          <em>${row.capacityFormula}</em>
+        </article>
         <article class="kpi-card">
           <span>${row.tipo} planejado</span>
           <strong>${secondsToDuration(row.plannedSeconds)}</strong>
@@ -139,6 +172,23 @@ function capacityCards(rows) {
       `).join("")}
     </section>
   `;
+}
+
+function theoreticalUnits(records) {
+  const settings = loadOperationalSettings();
+  const map = new Map();
+  productionRecords(records).forEach((record) => {
+    if (!record.theoreticalUnitSeconds) return;
+    const scopedKey = `${record.sourceType}|${normalize(record.product)}`;
+    if (!map.has(scopedKey)) map.set(scopedKey, record.theoreticalUnitSeconds);
+    const genericKey = `all|${normalize(record.product)}`;
+    if (!map.has(genericKey)) map.set(genericKey, record.theoreticalUnitSeconds);
+  });
+  settings.theoreticalTimes.forEach((item) => {
+    const seconds = parseTime(item.theoreticalUnitTime);
+    if (seconds) map.set(`all|${normalize(item.product)}`, seconds);
+  });
+  return Object.fromEntries(map.entries());
 }
 
 function capacityChart(rows) {
@@ -177,6 +227,7 @@ function planForm(records, plans, filters) {
     ...productionRecords(records).map((record) => record.product),
     ...plans.map((plan) => plan.item)
   ]);
+  const unitsPayload = encodeURIComponent(JSON.stringify(theoreticalUnits(records)));
   return `
     <article class="panel planning-form-panel">
       <div class="section-title">
@@ -186,7 +237,7 @@ function planForm(records, plans, filters) {
         </div>
       </div>
       <datalist id="planning-items">${products.map((item) => `<option value="${item}"></option>`).join("")}</datalist>
-      <form id="planning-form" class="planning-form">
+      <form id="planning-form" class="planning-form" data-theoretical-units="${unitsPayload}">
         <label>Base
           <select name="type">
             <option value="montagem">Montagem</option>
@@ -201,15 +252,16 @@ function planForm(records, plans, filters) {
             ${SHIFT_OPTIONS.map((shift) => `<option value="${shift}">${shift} turno</option>`).join("")}
           </select>
         </label>
-        <label>Produto / Tipo
+        <label>Produto / Palco-Tipo
           <input name="item" list="planning-items" placeholder="Produto ou tipo de corte" required>
         </label>
         <label>Qtd planejada
           <input type="number" min="0" step="1" name="quantity" required>
         </label>
         <label>Tempo teorico total
-          <input name="theoreticalTotal" placeholder="08:30:00" required>
+          <input name="theoreticalTotal" placeholder="Automatico" readonly required>
         </label>
+        <div class="planning-unit-note wide-field" data-theoretical-note>Selecione o produto/tipo e informe a quantidade para calcular o tempo teorico total.</div>
         <label class="wide-field">Observacao
           <input name="observation" placeholder="Opcional">
         </label>
@@ -224,7 +276,7 @@ function planForm(records, plans, filters) {
 export function Planning(records, planning, filters) {
   const plans = (planning?.plans || []).filter((plan) => planMatchesFilters(plan, filters));
   const dates = dateRange(filters, records, plans);
-  const rows = comparisonRows(records, plans, dates);
+  const rows = comparisonRows(records, plans, dates, filters);
   return `
     <section class="page-heading">
       <h1>Planejamento</h1>
@@ -252,7 +304,7 @@ export function Planning(records, planning, filters) {
 export function mountPlanning(records, planning, filters, onSave) {
   const plans = (planning?.plans || []).filter((plan) => planMatchesFilters(plan, filters));
   const dates = dateRange(filters, records, plans);
-  renderTable("planning-comparison-table", comparisonRows(records, plans, dates), [
+  renderTable("planning-comparison-table", comparisonRows(records, plans, dates, filters), [
     { title: "Base", field: "tipo" },
     { title: "Qtd planejada", field: "plannedQuantity", formatter: (cell) => number(cell.getValue()), hozAlign: "right" },
     { title: "Qtd realizada", field: "actualQuantity", formatter: (cell) => number(cell.getValue()), hozAlign: "right" },
@@ -275,7 +327,7 @@ export function mountPlanning(records, planning, filters, onSave) {
     { title: "Observacao", field: "observation" }
   ], { height: "340px" });
 
-  renderTable("planning-daily-table", dailyRows(records, plans, dates), [
+  renderTable("planning-daily-table", dailyRows(records, plans, dates, filters), [
     { title: "Data", field: "date", headerFilter: true },
     { title: "Base", field: "tipo", headerFilter: true },
     { title: "Qtd planejada", field: "plannedQuantity", formatter: (cell) => number(cell.getValue()), hozAlign: "right" },
@@ -287,7 +339,29 @@ export function mountPlanning(records, planning, filters, onSave) {
     { title: "% real/cap.", field: "actualCapacityUse", formatter: (cell) => formatPercent(cell.getValue()) }
   ], { height: "340px" });
 
-  document.querySelector("#planning-form")?.addEventListener("submit", async (event) => {
+  const formEl = document.querySelector("#planning-form");
+  const refreshTheoreticalTotal = () => {
+    if (!formEl) return;
+    const units = JSON.parse(decodeURIComponent(formEl.dataset.theoreticalUnits || "%7B%7D"));
+    const type = formEl.elements.type.value;
+    const item = normalize(formEl.elements.item.value);
+    const quantity = Number(formEl.elements.quantity.value || 0);
+    const unit = units[`${type}|${item}`] || units[`all|${item}`] || 0;
+    const total = unit * quantity;
+    formEl.elements.theoreticalTotal.value = total ? secondsToDuration(total) : "";
+    const note = formEl.querySelector("[data-theoretical-note]");
+    if (note) {
+      note.textContent = unit
+        ? `Tempo unitario encontrado: ${secondsToDuration(unit)} x ${number(quantity)} un. = ${secondsToDuration(total)}`
+        : "Tempo teorico unitario nao encontrado para este produto/tipo. Cadastre o tempo na base real ou em Configuracoes.";
+    }
+  };
+  formEl?.elements.type.addEventListener("change", refreshTheoreticalTotal);
+  formEl?.elements.item.addEventListener("input", refreshTheoreticalTotal);
+  formEl?.elements.quantity.addEventListener("input", refreshTheoreticalTotal);
+  refreshTheoreticalTotal();
+
+  formEl?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const theoreticalTotalSeconds = parseTime(form.get("theoreticalTotal"));
