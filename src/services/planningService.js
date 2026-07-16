@@ -5,6 +5,11 @@ import { parseDate, parseTime, secondsToDuration } from "../utils/dateUtils.js";
 
 const text = (value) => String(value ?? "").replace(/\s+/g, " ").trim();
 const normalize = (value) => text(value).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+const normalizeShift = (value) => {
+  const raw = normalize(value);
+  const match = raw.match(/[123]/);
+  return match ? match[0] : text(value);
+};
 
 function csvUrl(spreadsheetId, sheetName, sheetGid) {
   const tab = sheetGid
@@ -36,7 +41,7 @@ function normalizePlanRows(rows, type) {
         type,
         sourceName: type === "montagem" ? "Plano Montagem" : "Plano Corte",
         date,
-        shift: text(readAny(row, ["Turno", "TURNO"])),
+        shift: normalizeShift(readAny(row, ["Turno", "TURNO"])),
         item: normalize(item || (type === "montagem" ? "MONTAGEM" : "CORTE")),
         quantity,
         theoreticalTotalSeconds,

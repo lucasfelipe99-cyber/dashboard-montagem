@@ -9,6 +9,7 @@ const typeLabels = {
   corte: "Corte"
 };
 
+const SHIFT_OPTIONS = ["1", "2", "3"];
 const clean = (value) => String(value ?? "").trim();
 const normalize = (value) => clean(value).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
 const productionRecords = (records) => records.filter((record) => !record.isIdle && !record.isBreak && !record.invalid);
@@ -176,10 +177,6 @@ function planForm(records, plans, filters) {
     ...productionRecords(records).map((record) => record.product),
     ...plans.map((plan) => plan.item)
   ]);
-  const shifts = unique([
-    ...records.map((record) => record.shift),
-    ...plans.map((plan) => plan.shift)
-  ]);
   return `
     <article class="panel planning-form-panel">
       <div class="section-title">
@@ -200,9 +197,10 @@ function planForm(records, plans, filters) {
           <input type="date" name="date" value="${filters.startDate || todayISO()}" required>
         </label>
         <label>Turno
-          <input name="shift" list="planning-shifts" placeholder="Turno">
+          <select name="shift" required>
+            ${SHIFT_OPTIONS.map((shift) => `<option value="${shift}">${shift} turno</option>`).join("")}
+          </select>
         </label>
-        <datalist id="planning-shifts">${shifts.map((item) => `<option value="${item}"></option>`).join("")}</datalist>
         <label>Produto / Tipo
           <input name="item" list="planning-items" placeholder="Produto ou tipo de corte" required>
         </label>
