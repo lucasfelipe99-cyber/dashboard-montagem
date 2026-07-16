@@ -10,7 +10,7 @@ export const CONFIG = {
   planningMontagemSheetGid: import.meta.env.VITE_PLANNING_MONTAGEM_SHEET_GID || "0",
   planningCorteSheetName: import.meta.env.VITE_PLANNING_CORTE_SHEET_NAME || "PLANO_CORTE",
   planningCorteSheetGid: import.meta.env.VITE_PLANNING_CORTE_SHEET_GID || "",
-  planningScriptUrl: import.meta.env.VITE_PLANNING_SCRIPT_URL || "",
+  planningScriptUrl: import.meta.env.VITE_PLANNING_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbwBYZjub8HaCpK9vZrLRsfoeQwVBNtKFE--MTuILELHGCkbwhM8ovPN4Fpddq2jpAXf/exec",
   cuttingMachines: Number(import.meta.env.VITE_CUTTING_MACHINES || 14),
   refreshInterval: Number(import.meta.env.VITE_REFRESH_INTERVAL || 0),
   timezone: "America/Sao_Paulo"
