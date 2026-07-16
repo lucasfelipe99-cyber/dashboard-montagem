@@ -1,6 +1,6 @@
 import { PERFORMANCE_LIMITS, STATUS, WORK_SCHEDULE } from "../config.js";
-import { calculateDuration, parseTime } from "./dateUtils.js";
-import { getEmployeeSchedule } from "../services/settingsService.js";
+import { addDaysISO, calculateDuration, parseTime } from "./dateUtils.js";
+import { getEmployeeSchedule, loadOperationalSettings } from "../services/settingsService.js";
 
 export function safeDivide(numerator, denominator) {
   return denominator ? numerator / denominator : 0;
@@ -45,7 +45,34 @@ export function calculateIdleTime(employeeRecords) {
   return employeeRecords.filter((record) => record.isIdle).reduce((sum, record) => sum + record.realSeconds, 0);
 }
 
-export function summarize(records) {
+function normalize(value) {
+  return String(value ?? "").trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+}
+
+function dayCount(records, filters = {}) {
+  if (filters.startDate && filters.endDate) {
+    let count = 0;
+    let cursor = filters.startDate;
+    while (cursor <= filters.endDate && count < 370) {
+      count += 1;
+      cursor = addDaysISO(cursor, 1);
+    }
+    return Math.max(count, 1);
+  }
+  return Math.max(new Set(records.map((record) => record.date).filter(Boolean)).size, 1);
+}
+
+function factoryCapacitySeconds(records, filters = {}) {
+  const settings = loadOperationalSettings();
+  const days = dayCount(records, filters);
+  const machines = settings.planningConnection?.cuttingMachines || 14;
+  const cuttingSeconds = machines * 24 * 3600 * days;
+  const assemblers = settings.employeeSchedules.filter((schedule) => normalize(schedule.workType) === "MONTAGEM").length;
+  const assemblySeconds = assemblers * 8 * 3600 * days;
+  return cuttingSeconds + assemblySeconds;
+}
+
+export function summarize(records, options = {}) {
   const production = records.filter((record) => !record.isIdle && !record.isBreak);
   const realSeconds = production.reduce((sum, record) => sum + record.realSeconds, 0);
   const theoreticalSeconds = production.reduce((sum, record) => sum + record.theoreticalTotalSeconds, 0);
@@ -53,7 +80,9 @@ export function summarize(records) {
   const employees = new Set(production.map((record) => record.employee).filter(Boolean));
   const products = new Set(production.map((record) => record.product).filter(Boolean));
   const idleSeconds = records.filter((record) => record.isIdle).reduce((sum, record) => sum + record.realSeconds, 0);
-  const available = Array.from(groupBy(records, "employee").values()).reduce((sum, items) => sum + Math.max(...items.map((item) => scheduleSeconds(item.shift, item.employee).availableSeconds), 0), 0);
+  const available = options.capacityMode === "factory"
+    ? factoryCapacitySeconds(records, options.filters)
+    : Array.from(groupBy(records, "employee").values()).reduce((sum, items) => sum + Math.max(...items.map((item) => scheduleSeconds(item.shift, item.employee).availableSeconds), 0), 0);
   return {
     production,
     totalQuantity: quantity,

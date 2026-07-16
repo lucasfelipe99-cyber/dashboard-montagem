@@ -59,7 +59,7 @@ function pageHtml() {
   if (state.error && !state.dataset && state.page !== "settings") return `<div class="error-state">${state.error}</div>`;
   if (!state.filteredRecords.length && !["database", "settings", "planning"].includes(state.page)) return emptyState();
   const pages = {
-    overview: () => Overview(state.filteredRecords),
+    overview: () => Overview(state.filteredRecords, state.filters),
     timeline: () => TimelinePage(state.filteredRecords, state),
     employees: () => Employees(state.filteredRecords),
     products: () => Products(state.filteredRecords),

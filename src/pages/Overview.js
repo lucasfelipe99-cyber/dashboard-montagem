@@ -5,10 +5,10 @@ import { tableShell, renderTable } from "../components/DataTable.js";
 import { statusBadge } from "../components/StatusBadge.js";
 import { secondsToClock, secondsToDuration } from "../utils/dateUtils.js";
 
-export function Overview(records) {
+export function Overview(records, filters = {}) {
   const running = records.filter((record) => record.isRunning && !record.isIdle);
   return `
-    ${KpiCards(summarize(records))}
+    ${KpiCards(summarize(records, { capacityMode: "factory", filters }))}
     <section class="panel">
       <div class="section-title"><h2>Produção em andamento</h2><span>${running.length} atividade(s)</span></div>
       ${tableShell("running-table")}
