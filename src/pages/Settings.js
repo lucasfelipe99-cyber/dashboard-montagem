@@ -1,6 +1,6 @@
 import { WORK_SCHEDULE } from "../config.js";
 import { findEmployeeSchedule, loadOperationalSettings, saveOperationalSettings, clearOperationalSettings, formatSettingTime } from "../services/settingsService.js";
-import { secondsToDuration } from "../utils/dateUtils.js";
+import { parseTime, secondsToDuration } from "../utils/dateUtils.js";
 
 function optionList(values, selected, placeholder) {
   return `<option value="">${placeholder}</option>${values.map((value) => `<option value="${value}" ${value === selected ? "selected" : ""}>${value}</option>`).join("")}`;
@@ -11,6 +11,38 @@ function workTypeOptions(selected = "Montagem") {
     <option value="Montagem" ${selected === "Montagem" ? "selected" : ""}>Montagem</option>
     <option value="Produção" ${selected === "Produção" ? "selected" : ""}>Produção</option>
   `;
+}
+
+const clean = (value) => String(value ?? "").trim();
+const normalize = (value) => clean(value).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+const numberValue = (value) => Number(String(value ?? "").replace(",", ".").trim()) || 0;
+const isCompoundStructure = (item) => clean(item.structureKind) === "compound" || normalize(item.cutStageCode) === "PRODUTO";
+
+function durationFromSeconds(seconds) {
+  return seconds ? secondsToDuration(seconds) : "";
+}
+
+function productSummary(structures, product, quantity = 1, trail = []) {
+  const productKey = normalize(product);
+  if (!productKey || trail.includes(productKey)) return { pieces: 0, cutUnitSeconds: 0, cutBatchSeconds: 0, assemblySeconds: 0 };
+  return structures
+    .filter((item) => normalize(item.product) === productKey && numberValue(item.unitsPerProduct) > 0)
+    .reduce((summary, item) => {
+      const units = numberValue(item.unitsPerProduct) * quantity;
+      if (isCompoundStructure(item)) {
+        const child = productSummary(structures, item.stage, units, [...trail, productKey]);
+        summary.pieces += child.pieces;
+        summary.cutUnitSeconds += child.cutUnitSeconds;
+        summary.cutBatchSeconds += child.cutBatchSeconds;
+        summary.assemblySeconds += child.assemblySeconds;
+        return summary;
+      }
+      summary.pieces += units;
+      summary.cutUnitSeconds += (parseTime(item.cutUnitTime) || 0) * units;
+      summary.cutBatchSeconds += (parseTime(item.cutBatchTime) || 0) * (item.piecesPerStage ? units / numberValue(item.piecesPerStage) : 1);
+      summary.assemblySeconds += (parseTime(item.assemblyUnitTime) || 0) * units;
+      return summary;
+    }, { pieces: 0, cutUnitSeconds: 0, cutBatchSeconds: 0, assemblySeconds: 0 });
 }
 
 function scheduleRows(records, settings) {
@@ -54,20 +86,24 @@ function theoryRows(records, settings) {
 }
 
 function structureRows(settings) {
-  return settings.productStructures.map((item) => `
-    <tr class="structure-row ${item.structureKind === "compound" ? "compound-structure-row" : ""}">
-      <td><input value="${item.product}" data-setting="product" list="structure-product-options"></td>
-      <td><input value="${item.stage}" data-setting="stage" list="structure-stage-options"></td>
-      <td><input value="${item.structureKind === "compound" ? "PRODUTO" : item.cutStageCode || ""}" data-setting="cutStageCode" placeholder="P17"></td>
-      <td><input type="number" min="0" step="0.01" value="${item.unitsPerProduct || ""}" data-setting="unitsPerProduct"></td>
-      <td><input type="number" min="0" step="0.01" value="${item.piecesPerStage || ""}" data-setting="piecesPerStage"></td>
-      <td><input value="${formatSettingTime(item.cutUnitTime) || item.cutUnitTime || ""}" data-setting="cutUnitTime" placeholder="00:00:47"></td>
-      <td><input value="${formatSettingTime(item.cutBatchTime) || item.cutBatchTime || ""}" data-setting="cutBatchTime" placeholder="00:38:44"></td>
-      <td><input value="${formatSettingTime(item.assemblyUnitTime) || item.assemblyUnitTime || ""}" data-setting="assemblyUnitTime" placeholder="00:05:00"></td>
-      <td hidden><input value="${item.structureKind || "stage"}" data-setting="structureKind"></td>
-      <td><button class="icon-button danger" data-action="remove-row" aria-label="Remover linha"><i data-lucide="trash-2"></i></button></td>
-    </tr>
-  `).join("");
+  return settings.productStructures.map((item) => {
+    const isCompound = isCompoundStructure(item);
+    const inherited = isCompound ? productSummary(settings.productStructures, item.stage, Number(item.unitsPerProduct || 0)) : null;
+    return `
+      <tr class="structure-row ${isCompound ? "compound-structure-row" : ""}">
+        <td><input value="${item.product}" data-setting="product" list="structure-product-options"></td>
+        <td><input value="${item.stage}" data-setting="stage" list="structure-stage-options"></td>
+        <td><input value="${isCompound ? "PRODUTO" : item.cutStageCode || ""}" data-setting="cutStageCode" placeholder="P17"></td>
+        <td><input type="number" min="0" step="0.01" value="${item.unitsPerProduct || ""}" data-setting="unitsPerProduct"></td>
+        <td><input type="number" min="0" step="0.01" value="${isCompound ? inherited.pieces || "" : item.piecesPerStage || ""}" data-setting="piecesPerStage" ${isCompound ? "readonly" : ""}></td>
+        <td><input value="${isCompound ? durationFromSeconds(inherited.cutUnitSeconds) : formatSettingTime(item.cutUnitTime) || item.cutUnitTime || ""}" data-setting="cutUnitTime" placeholder="00:00:47" ${isCompound ? "readonly" : ""}></td>
+        <td><input value="${isCompound ? durationFromSeconds(inherited.cutBatchSeconds) : formatSettingTime(item.cutBatchTime) || item.cutBatchTime || ""}" data-setting="cutBatchTime" placeholder="00:38:44" ${isCompound ? "readonly" : ""}></td>
+        <td><input value="${isCompound ? durationFromSeconds(inherited.assemblySeconds) : formatSettingTime(item.assemblyUnitTime) || item.assemblyUnitTime || ""}" data-setting="assemblyUnitTime" placeholder="00:05:00" ${isCompound ? "readonly" : ""}></td>
+        <td hidden><input value="${isCompound ? "compound" : "stage"}" data-setting="structureKind"></td>
+        <td><button class="icon-button danger" data-action="remove-row" aria-label="Remover linha"><i data-lucide="trash-2"></i></button></td>
+      </tr>
+    `;
+  }).join("");
 }
 
 function simpleStructureRow() {
@@ -85,6 +121,30 @@ function simpleStructureRow() {
       <td><button class="icon-button danger" data-action="remove-row" aria-label="Remover linha"><i data-lucide="trash-2"></i></button></td>
     </tr>
   `;
+}
+
+function readStructureRowsFromDom() {
+  return [...document.querySelectorAll(".structure-row")].map(readRow);
+}
+
+function refreshCompoundStructureRows() {
+  const structures = readStructureRowsFromDom();
+  document.querySelectorAll(".structure-row").forEach((row) => {
+    const kind = row.querySelector("[data-setting='structureKind']")?.value;
+    const code = row.querySelector("[data-setting='cutStageCode']")?.value;
+    if (kind !== "compound" && normalize(code) !== "PRODUTO") return;
+    const stage = row.querySelector("[data-setting='stage']")?.value || "";
+    const quantity = numberValue(row.querySelector("[data-setting='unitsPerProduct']")?.value);
+    const inherited = productSummary(structures, stage, quantity);
+    const piecesInput = row.querySelector("[data-setting='piecesPerStage']");
+    const cutUnitInput = row.querySelector("[data-setting='cutUnitTime']");
+    const cutBatchInput = row.querySelector("[data-setting='cutBatchTime']");
+    const assemblyInput = row.querySelector("[data-setting='assemblyUnitTime']");
+    if (piecesInput) piecesInput.value = inherited.pieces || "";
+    if (cutUnitInput) cutUnitInput.value = durationFromSeconds(inherited.cutUnitSeconds);
+    if (cutBatchInput) cutBatchInput.value = durationFromSeconds(inherited.cutBatchSeconds);
+    if (assemblyInput) assemblyInput.value = durationFromSeconds(inherited.assemblySeconds);
+  });
 }
 
 function connectionPanel(settings) {
@@ -387,20 +447,24 @@ export function mountSettings(onSave) {
       return;
     }
     const body = document.querySelector("#structure-settings tbody");
-    rows.forEach((row) => body?.insertAdjacentHTML("beforeend", `
-      <tr class="structure-row compound-structure-row">
+    rows.forEach((row) => {
+      const inherited = productSummary(readStructureRowsFromDom(), row.component, row.quantity);
+      body?.insertAdjacentHTML("beforeend", `
+        <tr class="structure-row compound-structure-row">
         <td><input value="${finalProduct}" data-setting="product" list="structure-product-options"></td>
         <td><input value="${row.component}" data-setting="stage" list="structure-stage-options"></td>
         <td><input value="PRODUTO" data-setting="cutStageCode"></td>
         <td><input type="number" min="0" step="0.01" value="${row.quantity}" data-setting="unitsPerProduct"></td>
-        <td><input type="number" min="0" step="0.01" value="" data-setting="piecesPerStage"></td>
-        <td><input value="" data-setting="cutUnitTime"></td>
-        <td><input value="" data-setting="cutBatchTime"></td>
-        <td><input value="" data-setting="assemblyUnitTime"></td>
+        <td><input type="number" min="0" step="0.01" value="${inherited.pieces || ""}" data-setting="piecesPerStage" readonly></td>
+        <td><input value="${durationFromSeconds(inherited.cutUnitSeconds)}" data-setting="cutUnitTime" readonly></td>
+        <td><input value="${durationFromSeconds(inherited.cutBatchSeconds)}" data-setting="cutBatchTime" readonly></td>
+        <td><input value="${durationFromSeconds(inherited.assemblySeconds)}" data-setting="assemblyUnitTime" readonly></td>
         <td hidden><input value="compound" data-setting="structureKind"></td>
         <td><button class="icon-button danger" data-action="remove-row" aria-label="Remover linha"><i data-lucide="trash-2"></i></button></td>
       </tr>
-    `));
+      `);
+    });
+    refreshCompoundStructureRows();
     form.reset();
     form.querySelector("[data-composite-components]").innerHTML = componentRow();
     closeCompositeModal();
@@ -418,9 +482,13 @@ export function mountSettings(onSave) {
   document.querySelectorAll(".settings-table tbody").forEach((tbody) => tbody.addEventListener("click", (event) => {
     const button = event.target.closest("[data-action='remove-row']");
     if (button) button.closest("tr")?.remove();
+    refreshCompoundStructureRows();
   }));
+  document.querySelector("#structure-settings tbody")?.addEventListener("input", refreshCompoundStructureRows);
+  refreshCompoundStructureRows();
 
   document.querySelector("[data-action='save-settings']")?.addEventListener("click", () => {
+    refreshCompoundStructureRows();
     const dataConnection = Object.fromEntries([...document.querySelectorAll("[data-connection]")].map((input) => [input.dataset.connection, input.value]));
     const secondaryDataConnection = Object.fromEntries([...document.querySelectorAll("[data-secondary-connection]")].map((input) => [input.dataset.secondaryConnection, input.value]));
     const planningConnection = Object.fromEntries([...document.querySelectorAll("[data-planning-connection]")].map((input) => [input.dataset.planningConnection, input.value]));
