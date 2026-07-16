@@ -1,7 +1,7 @@
 import { tableShell, renderTable } from "../components/DataTable.js";
 import { loadOperationalSettings } from "../services/settingsService.js";
 import { savePlanRecord } from "../services/planningService.js";
-import { addDaysISO, calculateDuration, parseTime, secondsToDuration, todayISO } from "../utils/dateUtils.js";
+import { addDaysISO, parseTime, secondsToDuration, todayISO } from "../utils/dateUtils.js";
 import { safeDivide } from "../utils/calculations.js";
 
 const typeLabels = {
@@ -42,10 +42,6 @@ function dateRange(filters, records, plans) {
   return dates;
 }
 
-function scheduleDuration(schedule) {
-  return calculateDuration(parseTime(schedule.start), parseTime(schedule.end));
-}
-
 function shiftMatchesSchedule(schedule, selectedShift) {
   if (!selectedShift) return true;
   const raw = normalize(`${schedule.shift} ${schedule.start} ${schedule.end}`);
@@ -70,10 +66,11 @@ function capacityDetails(type, dates, filters = {}) {
   const schedules = settings.employeeSchedules
     .filter((schedule) => normalize(schedule.workType) === "MONTAGEM")
     .filter((schedule) => shiftMatchesSchedule(schedule, filters.shift));
-  const montageSeconds = schedules.reduce((sum, schedule) => sum + scheduleDuration(schedule), 0);
+  const standardWorkdaySeconds = 8 * 3600;
+  const montageSeconds = schedules.length * standardWorkdaySeconds;
   return {
     seconds: montageSeconds * dates.length,
-    formula: `${schedules.length} montador(es) com horarios cadastrados x ${dates.length} dia(s)`,
+    formula: `${schedules.length} montador(es) x 8h x ${dates.length} dia(s)`,
     perDay: montageSeconds,
     resources: schedules.length
   };
