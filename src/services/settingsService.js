@@ -59,9 +59,11 @@ function normalizeSchedule(item) {
 }
 
 function normalizeProductStructure(item) {
+  const kind = clean(item.structureKind) === "compound" ? "compound" : "stage";
   return {
     product: clean(item.product).toUpperCase(),
     stage: clean(item.stage).toUpperCase(),
+    structureKind: kind,
     piecesPerStage: Number(item.piecesPerStage || 0),
     unitsPerProduct: Number(item.unitsPerProduct || 0),
     cutStageCode: clean(item.cutStageCode).toUpperCase(),
@@ -72,7 +74,7 @@ function normalizeProductStructure(item) {
 }
 
 function productStructureKey(item) {
-  return `${normalize(item.product)}|${normalize(item.stage)}|${normalize(item.cutStageCode)}`;
+  return `${normalize(item.product)}|${normalize(item.stage)}|${normalize(item.cutStageCode)}|${clean(item.structureKind)}`;
 }
 
 function mergeDefaultProductStructures(savedStructures = []) {

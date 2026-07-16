@@ -55,18 +55,36 @@ function theoryRows(records, settings) {
 
 function structureRows(settings) {
   return settings.productStructures.map((item) => `
-    <tr class="structure-row">
+    <tr class="structure-row ${item.structureKind === "compound" ? "compound-structure-row" : ""}">
       <td><input value="${item.product}" data-setting="product" list="structure-product-options"></td>
       <td><input value="${item.stage}" data-setting="stage" list="structure-stage-options"></td>
-      <td><input value="${item.cutStageCode || ""}" data-setting="cutStageCode" placeholder="P17"></td>
+      <td><input value="${item.structureKind === "compound" ? "PRODUTO" : item.cutStageCode || ""}" data-setting="cutStageCode" placeholder="P17"></td>
       <td><input type="number" min="0" step="0.01" value="${item.unitsPerProduct || ""}" data-setting="unitsPerProduct"></td>
       <td><input type="number" min="0" step="0.01" value="${item.piecesPerStage || ""}" data-setting="piecesPerStage"></td>
       <td><input value="${formatSettingTime(item.cutUnitTime) || item.cutUnitTime || ""}" data-setting="cutUnitTime" placeholder="00:00:47"></td>
       <td><input value="${formatSettingTime(item.cutBatchTime) || item.cutBatchTime || ""}" data-setting="cutBatchTime" placeholder="00:38:44"></td>
       <td><input value="${formatSettingTime(item.assemblyUnitTime) || item.assemblyUnitTime || ""}" data-setting="assemblyUnitTime" placeholder="00:05:00"></td>
+      <td hidden><input value="${item.structureKind || "stage"}" data-setting="structureKind"></td>
       <td><button class="icon-button danger" data-action="remove-row" aria-label="Remover linha"><i data-lucide="trash-2"></i></button></td>
     </tr>
   `).join("");
+}
+
+function simpleStructureRow() {
+  return `
+    <tr class="structure-row">
+      <td><input data-setting="product" list="structure-product-options" placeholder="Produto pronto"></td>
+      <td><input data-setting="stage" list="structure-stage-options" placeholder="Palco / item de corte"></td>
+      <td><input data-setting="cutStageCode" placeholder="P17"></td>
+      <td><input type="number" min="0" step="0.01" data-setting="unitsPerProduct" placeholder="1"></td>
+      <td><input type="number" min="0" step="0.01" data-setting="piecesPerStage" placeholder="88"></td>
+      <td><input data-setting="cutUnitTime" placeholder="00:00:47"></td>
+      <td><input data-setting="cutBatchTime" placeholder="00:38:44"></td>
+      <td><input data-setting="assemblyUnitTime" placeholder="00:05:00"></td>
+      <td hidden><input value="stage" data-setting="structureKind"></td>
+      <td><button class="icon-button danger" data-action="remove-row" aria-label="Remover linha"><i data-lucide="trash-2"></i></button></td>
+    </tr>
+  `;
 }
 
 function connectionPanel(settings) {
@@ -180,6 +198,7 @@ export function Settings(records) {
     <datalist id="product-options">${products.map((item) => `<option value="${item}"></option>`).join("")}</datalist>
     <datalist id="structure-product-options">${structureProducts.map((item) => `<option value="${item}"></option>`).join("")}</datalist>
     <datalist id="structure-stage-options">${structureStages.map((item) => `<option value="${item}"></option>`).join("")}</datalist>
+    <datalist id="composite-product-options">${structureProducts.map((item) => `<option value="${item}"></option>`).join("")}</datalist>
 
     <section class="settings-grid">
       ${connectionPanel(settings)}
@@ -225,7 +244,7 @@ export function Settings(records) {
         </div>
         <div class="responsive-table">
           <table class="settings-table structure-settings-table" id="structure-settings">
-            <thead><tr><th>Produto pronto</th><th>Palco / item de corte</th><th>Codigo palco</th><th>Un. por produto</th><th>Pecas por palco</th><th>Tempo corte un.</th><th>Tempo corte palco</th><th>Tempo montagem un.</th><th></th></tr></thead>
+            <thead><tr><th>Produto pronto / final</th><th>Palco ou produto componente</th><th>Codigo palco</th><th>Un. por produto</th><th>Pecas por palco</th><th>Tempo corte un.</th><th>Tempo corte palco</th><th>Tempo montagem un.</th><th></th></tr></thead>
             <tbody>${structureRows(settings)}</tbody>
           </table>
         </div>
@@ -237,6 +256,52 @@ export function Settings(records) {
       <button class="button" data-action="reset-settings"><i data-lucide="rotate-ccw"></i> Restaurar padrões</button>
       <span class="muted">Depois de salvar, todos os cards, gráficos, tabelas e a linha do tempo são recalculados.</span>
     </section>
+    <div id="structure-choice-modal" class="modal-backdrop" hidden>
+      <section class="modal-card">
+        <div class="section-title">
+          <div>
+            <h2>Adicionar estrutura</h2>
+            <p>Escolha o tipo de estrutura que deseja cadastrar.</p>
+          </div>
+        </div>
+        <button class="button" type="button" data-action="add-simple-structure"><i data-lucide="plus"></i> Criar produto pronto</button>
+        <button class="button" type="button" data-action="open-composite-structure"><i data-lucide="layers"></i> Criar produto formado por produtos prontos</button>
+        <div class="modal-actions">
+          <button class="button" type="button" data-action="close-structure-choice">Cancelar</button>
+        </div>
+      </section>
+    </div>
+
+    <div id="composite-structure-modal" class="modal-backdrop" hidden>
+      <form class="modal-card modal-card-wide" id="composite-structure-form">
+        <div class="section-title">
+          <div>
+            <h2>Produto composto</h2>
+            <p>Monte o produto final usando produtos prontos ja cadastrados na estrutura.</p>
+          </div>
+        </div>
+        <label>Produto final
+          <input name="finalProduct" list="structure-product-options" placeholder="Nome do produto final" required>
+        </label>
+        <div class="responsive-table">
+          <table class="settings-table composite-settings-table">
+            <thead><tr><th>Produto pronto componente</th><th>Qtd por produto final</th><th></th></tr></thead>
+            <tbody data-composite-components>
+              <tr class="composite-component-row">
+                <td><input name="componentProduct" list="composite-product-options" placeholder="Produto pronto" required></td>
+                <td><input name="componentQuantity" type="number" min="0" step="0.01" value="1" required></td>
+                <td><button class="button" type="button" data-action="remove-composite-component">Remover</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <button class="button" type="button" data-action="add-composite-component"><i data-lucide="plus"></i> Produto componente</button>
+        <div class="modal-actions">
+          <button class="button primary" type="submit">Adicionar produto composto</button>
+          <button class="button" type="button" data-action="close-composite-structure">Cancelar</button>
+        </div>
+      </form>
+    </div>
   `;
 }
 
@@ -267,20 +332,84 @@ export function mountSettings(onSave) {
     `);
   });
 
+  const choiceModal = document.getElementById("structure-choice-modal");
+  const compositeModal = document.getElementById("composite-structure-modal");
+  const closeChoiceModal = () => { if (choiceModal) choiceModal.hidden = true; };
+  const closeCompositeModal = () => { if (compositeModal) compositeModal.hidden = true; };
+  const componentRow = () => `
+    <tr class="composite-component-row">
+      <td><input name="componentProduct" list="composite-product-options" placeholder="Produto pronto" required></td>
+      <td><input name="componentQuantity" type="number" min="0" step="0.01" value="1" required></td>
+      <td><button class="button" type="button" data-action="remove-composite-component">Remover</button></td>
+    </tr>
+  `;
+
   document.querySelector("[data-action='add-structure']")?.addEventListener("click", () => {
-    document.querySelector("#structure-settings tbody")?.insertAdjacentHTML("beforeend", `
-      <tr class="structure-row">
-        <td><input data-setting="product" list="structure-product-options" placeholder="Produto pronto"></td>
-        <td><input data-setting="stage" list="structure-stage-options" placeholder="Palco / item de corte"></td>
-        <td><input data-setting="cutStageCode" placeholder="P17"></td>
-        <td><input type="number" min="0" step="0.01" data-setting="unitsPerProduct" placeholder="1"></td>
-        <td><input type="number" min="0" step="0.01" data-setting="piecesPerStage" placeholder="88"></td>
-        <td><input data-setting="cutUnitTime" placeholder="00:00:47"></td>
-        <td><input data-setting="cutBatchTime" placeholder="00:38:44"></td>
-        <td><input data-setting="assemblyUnitTime" placeholder="00:05:00"></td>
+    if (choiceModal) choiceModal.hidden = false;
+  });
+  document.querySelector("[data-action='close-structure-choice']")?.addEventListener("click", closeChoiceModal);
+  document.querySelector("[data-action='add-simple-structure']")?.addEventListener("click", () => {
+    document.querySelector("#structure-settings tbody")?.insertAdjacentHTML("beforeend", simpleStructureRow());
+    closeChoiceModal();
+  });
+  document.querySelector("[data-action='open-composite-structure']")?.addEventListener("click", () => {
+    closeChoiceModal();
+    if (compositeModal) compositeModal.hidden = false;
+  });
+  document.querySelector("[data-action='close-composite-structure']")?.addEventListener("click", closeCompositeModal);
+  document.querySelector("[data-action='add-composite-component']")?.addEventListener("click", () => {
+    document.querySelector("[data-composite-components]")?.insertAdjacentHTML("beforeend", componentRow());
+  });
+  document.querySelector("[data-composite-components]")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-action='remove-composite-component']");
+    if (!button) return;
+    const rows = [...document.querySelectorAll(".composite-component-row")];
+    if (rows.length === 1) {
+      rows[0].querySelectorAll("input").forEach((input) => {
+        input.value = input.name === "componentQuantity" ? "1" : "";
+      });
+      return;
+    }
+    button.closest("tr")?.remove();
+  });
+  document.getElementById("composite-structure-form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const finalProduct = form.elements.finalProduct.value.trim().toUpperCase();
+    const rows = [...form.querySelectorAll(".composite-component-row")]
+      .map((row) => ({
+        component: row.querySelector("[name='componentProduct']").value.trim().toUpperCase(),
+        quantity: Number(row.querySelector("[name='componentQuantity']").value || 0)
+      }))
+      .filter((row) => row.component || row.quantity);
+    if (!finalProduct || !rows.length || rows.some((row) => !row.component || !row.quantity)) {
+      alert("Informe o produto final e todos os produtos prontos componentes com quantidade.");
+      return;
+    }
+    const body = document.querySelector("#structure-settings tbody");
+    rows.forEach((row) => body?.insertAdjacentHTML("beforeend", `
+      <tr class="structure-row compound-structure-row">
+        <td><input value="${finalProduct}" data-setting="product" list="structure-product-options"></td>
+        <td><input value="${row.component}" data-setting="stage" list="structure-stage-options"></td>
+        <td><input value="PRODUTO" data-setting="cutStageCode"></td>
+        <td><input type="number" min="0" step="0.01" value="${row.quantity}" data-setting="unitsPerProduct"></td>
+        <td><input type="number" min="0" step="0.01" value="" data-setting="piecesPerStage"></td>
+        <td><input value="" data-setting="cutUnitTime"></td>
+        <td><input value="" data-setting="cutBatchTime"></td>
+        <td><input value="" data-setting="assemblyUnitTime"></td>
+        <td hidden><input value="compound" data-setting="structureKind"></td>
         <td><button class="icon-button danger" data-action="remove-row" aria-label="Remover linha"><i data-lucide="trash-2"></i></button></td>
       </tr>
-    `);
+    `));
+    form.reset();
+    form.querySelector("[data-composite-components]").innerHTML = componentRow();
+    closeCompositeModal();
+  });
+  choiceModal?.addEventListener("click", (event) => {
+    if (event.target.id === "structure-choice-modal") closeChoiceModal();
+  });
+  compositeModal?.addEventListener("click", (event) => {
+    if (event.target.id === "composite-structure-modal") closeCompositeModal();
   });
 
   document.querySelectorAll("[data-action='remove-row']").forEach((button) => button.addEventListener("click", () => {

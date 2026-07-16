@@ -299,6 +299,10 @@ function structuresForProduct(structures, product) {
   return structures.filter((item) => normalize(item.product) === productKey && Number(item.unitsPerProduct) > 0);
 }
 
+function isCompoundStructure(item) {
+  return item?.structureKind === "compound" || normalize(item?.cutStageCode) === "PRODUTO";
+}
+
 function structureTime(item, field) {
   return parseTime(item?.[field]) || 0;
 }
@@ -307,8 +311,14 @@ function cutUnitForStructure(units, structure) {
   return unitFor(units, "corte", structure.stage, structure.cutStageCode) || structureTime(structure, "cutUnitTime");
 }
 
-function assemblyUnitForProduct(units, structures, product) {
+function assemblyUnitForProduct(units, structures, product, trail = []) {
+  const productKey = normalize(product);
+  if (trail.includes(productKey)) return 0;
   const matches = structuresForProduct(structures, product);
+  const compoundRows = matches.filter(isCompoundStructure);
+  if (compoundRows.length) {
+    return compoundRows.reduce((sum, row) => sum + (assemblyUnitForProduct(units, structures, row.stage, [...trail, productKey]) * Number(row.unitsPerProduct || 0)), 0);
+  }
   const configured = matches.map((item) => structureTime(item, "assemblyUnitTime")).find(Boolean);
   return configured || unitFor(units, "montagem", product) || unitFor(units, "all", product);
 }
@@ -317,6 +327,37 @@ function structurePieces(row, productQuantity) {
   const quantity = productQuantity * Number(row.unitsPerProduct || 0);
   const stages = row.piecesPerStage ? quantity / Number(row.piecesPerStage) : 0;
   return { quantity, stages };
+}
+
+function expandProductToCutItems(structures, product, productQuantity, trail = []) {
+  const productKey = normalize(product);
+  if (trail.includes(productKey)) {
+    return { items: [], issues: [`${product}: estrutura circular`] };
+  }
+  const matches = structuresForProduct(structures, product);
+  if (!matches.length) {
+    return { items: [], issues: [`${product}: sem estrutura cadastrada`] };
+  }
+  return matches.reduce((result, structure) => {
+    if (isCompoundStructure(structure)) {
+      const childQuantity = productQuantity * Number(structure.unitsPerProduct || 0);
+      const child = expandProductToCutItems(structures, structure.stage, childQuantity, [...trail, productKey]);
+      result.items.push(...child.items.map((item) => ({
+        ...item,
+        productPath: [structure.stage, item.productPath].filter(Boolean).join(" > ")
+      })));
+      result.issues.push(...child.issues);
+      return result;
+    }
+    const pieces = structurePieces(structure, productQuantity);
+    result.items.push({
+      structure,
+      quantity: pieces.quantity,
+      stages: pieces.stages,
+      productPath: ""
+    });
+    return result;
+  }, { items: [], issues: [] });
 }
 
 function capacityChart(rows) {
@@ -519,23 +560,23 @@ export function mountPlanning(records, planning, filters, onSave) {
     const item = normalize(itemInput?.value);
     const quantity = Number(quantityInput?.value || 0);
     if (type === "corte" && cutMode === "product" && item && quantity) {
-      const matches = structuresForProduct(structures, item);
+      const expansion = expandProductToCutItems(structures, item, quantity);
       const missingUnits = [];
-      const total = matches.reduce((sum, structure) => {
-        const unit = cutUnitForStructure(units, structure);
-        if (!unit) missingUnits.push(structure.cutStageCode || structure.stage);
-        return sum + (unit * structurePieces(structure, quantity).quantity);
+      const total = expansion.items.reduce((sum, item) => {
+        const unit = cutUnitForStructure(units, item.structure);
+        if (!unit) missingUnits.push(item.structure.cutStageCode || item.structure.stage);
+        return sum + (unit * item.quantity);
       }, 0);
-      totalInput.value = matches.length && !missingUnits.length && total ? secondsToDuration(total) : "";
+      totalInput.value = expansion.items.length && !expansion.issues.length && !missingUnits.length && total ? secondsToDuration(total) : "";
       const note = row.querySelector("[data-theoretical-note]");
       if (note) {
-        const stages = matches.reduce((sum, structure) => sum + structurePieces(structure, quantity).stages, 0);
-        if (!matches.length) {
-          note.textContent = "Produto sem estrutura cadastrada em Configuracoes.";
+        const stages = expansion.items.reduce((sum, item) => sum + item.stages, 0);
+        if (expansion.issues.length) {
+          note.textContent = expansion.issues[0];
         } else if (missingUnits.length) {
-          note.textContent = `Estrutura encontrada (${matches.length} item(ns)), mas falta tempo teorico para: ${missingUnits.slice(0, 3).join(", ")}.`;
+          note.textContent = `Estrutura encontrada (${expansion.items.length} palco(s)), mas falta tempo teorico para: ${missingUnits.slice(0, 3).join(", ")}.`;
         } else {
-          note.textContent = `${matches.length} item(ns) de corte | ${stages.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} palco(s) estimado(s) | Total ${secondsToDuration(total)}`;
+          note.textContent = `${expansion.items.length} palco(s) de corte | ${stages.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} palco(s) estimado(s) | Total ${secondsToDuration(total)}`;
         }
       }
       refreshPlanningTotals();
@@ -608,27 +649,25 @@ export function mountPlanning(records, planning, filters, onSave) {
       const expandedRows = [];
       const issues = [];
       rowsToSave.forEach((row) => {
-        const matches = structuresForProduct(structures, row.item);
-        if (!matches.length) {
-          issues.push(`${row.item}: sem estrutura cadastrada`);
-          return;
-        }
-        matches.forEach((structure) => {
+        const expansion = expandProductToCutItems(structures, row.item, row.quantity);
+        issues.push(...expansion.issues);
+        expansion.items.forEach((item) => {
+          const structure = item.structure;
           const unit = cutUnitForStructure(units, structure);
           if (!unit) {
             issues.push(`${row.item} > ${structure.cutStageCode || structure.stage}: sem tempo teorico`);
             return;
           }
-          const pieces = structurePieces(structure, row.quantity);
-          const stagesText = pieces.stages
-            ? `${pieces.stages.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} palco(s)`
+          const stagesText = item.stages
+            ? `${item.stages.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} palco(s)`
             : "palcos sem capacidade cadastrada";
           expandedRows.push({
             item: normalize(structure.stage),
-            quantity: pieces.quantity,
-            theoreticalTotalSeconds: unit * pieces.quantity,
+            quantity: item.quantity,
+            theoreticalTotalSeconds: unit * item.quantity,
             observation: [
               `Produto pronto: ${row.item}`,
+              item.productPath ? `Componente: ${item.productPath}` : "",
               `Qtd produto: ${number(row.quantity)}`,
               structure.cutStageCode ? `Palco: ${structure.cutStageCode}` : "",
               stagesText,
