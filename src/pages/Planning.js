@@ -189,33 +189,50 @@ function theoreticalUnits(records) {
 }
 
 function capacityChart(rows) {
-  const max = Math.max(...rows.flatMap((row) => [row.capacitySeconds, row.plannedSeconds, row.actualSeconds]), 1);
   return `
-    <article class="panel chart-panel">
+    <article class="panel chart-panel planning-capacity-panel">
       <h2>Consumo de capacidade</h2>
+      <p>Plano e Realizado aparecem como consumo sobre a capacidade disponivel do periodo filtrado.</p>
       <div class="native-chart-legend">
-        <span><i style="background:#f59e0b"></i> Planejado</span>
-        <span><i style="background:#0f5f8f"></i> Realizado</span>
         <span><i style="background:#d9e2ec"></i> Capacidade</span>
+        <span><i style="background:#f59e0b"></i> Plano</span>
+        <span><i style="background:#0f5f8f"></i> Realizado</span>
       </div>
-      <div class="native-bars">
-        ${rows.map((row) => `
-          <div class="native-bar-row planning-bar-row">
-            <span class="native-bar-label">${row.tipo}</span>
-            <span class="native-bar-track">
-              <span class="native-bar" style="--bar:${Math.max(row.capacitySeconds / max * 100, 1)}%;--color:#d9e2ec"></span>
-              <span class="native-bar" style="--bar:${Math.max(row.plannedSeconds / max * 100, 1)}%;--color:#f59e0b"></span>
-              <span class="native-bar" style="--bar:${Math.max(row.actualSeconds / max * 100, 1)}%;--color:#0f5f8f"></span>
-            </span>
-            <span class="native-bar-values">
-              <b>Plano ${secondsToDuration(row.plannedSeconds)}</b>
-              <b>Real ${secondsToDuration(row.actualSeconds)}</b>
-              <b>Cap. ${secondsToDuration(row.capacitySeconds)}</b>
-            </span>
-          </div>
-        `).join("")}
+      <div class="planning-capacity-chart">
+        ${rows.map((row) => capacityChartGroup(row)).join("")}
       </div>
     </article>
+  `;
+}
+
+function capacityMetricLane(label, value, capacity, color, detail, isCapacity = false) {
+  const percent = isCapacity ? 100 : safeDivide(value, capacity) * 100;
+  const capped = Math.min(Math.max(percent, value ? 1 : 0), 100);
+  return `
+    <div class="capacity-lane">
+      <span class="capacity-lane-label">${label}</span>
+      <span class="capacity-lane-track">
+        <span class="capacity-lane-fill" style="--bar:${capped}%;--color:${color}"></span>
+      </span>
+      <span class="capacity-lane-value">
+        <strong>${secondsToDuration(value)}</strong>
+        <small>${detail}</small>
+      </span>
+    </div>
+  `;
+}
+
+function capacityChartGroup(row) {
+  return `
+    <section class="capacity-group">
+      <div class="capacity-group-header">
+        <strong>${row.tipo}</strong>
+        <span>${row.capacityFormula}</span>
+      </div>
+      ${capacityMetricLane("Capacidade", row.capacitySeconds, row.capacitySeconds, "#d9e2ec", "100% disponivel", true)}
+      ${capacityMetricLane("Plano", row.plannedSeconds, row.capacitySeconds, "#f59e0b", `${formatPercent(row.capacityUse)} da capacidade`)}
+      ${capacityMetricLane("Realizado", row.actualSeconds, row.capacitySeconds, "#0f5f8f", `${formatPercent(row.actualCapacityUse)} da capacidade`)}
+    </section>
   `;
 }
 
