@@ -96,7 +96,7 @@ function aggregateActual(records, type) {
 }
 
 function comparisonRows(records, plans, dates, filters = {}) {
-  return ["montagem", "corte"].map((type) => {
+  const baseRows = ["montagem", "corte"].map((type) => {
     const planned = aggregatePlan(plans, type);
     const actual = aggregateActual(records, type);
     const capacity = capacityDetails(type, dates, filters);
@@ -113,9 +113,15 @@ function comparisonRows(records, plans, dates, filters = {}) {
       capacityResources: capacity.resources,
       capacityUse: safeDivide(planned.seconds, capacity.seconds) * 100,
       actualCapacityUse: safeDivide(actual.seconds, capacity.seconds) * 100,
+      actualShare: 0,
       timeVariance: actual.seconds - planned.seconds
     };
   });
+  const totalActualSeconds = baseRows.reduce((sum, row) => sum + row.actualSeconds, 0);
+  return baseRows.map((row) => ({
+    ...row,
+    actualShare: safeDivide(row.actualSeconds, totalActualSeconds) * 100
+  }));
 }
 
 function itemComparisonRows(records, plans) {
@@ -231,7 +237,8 @@ function capacityCards(rows) {
         <article class="kpi-card">
           <span>${row.tipo} realizado</span>
           <strong>${secondsToDuration(row.actualSeconds)}</strong>
-          <small>${number(row.actualQuantity)} un. | ${formatPercent(row.actualCapacityUse)} da capacidade</small>
+          <small>${number(row.actualQuantity)} un. | ${formatPercent(row.actualShare)} do realizado total</small>
+          <em>${formatPercent(row.actualCapacityUse)} da capacidade</em>
         </article>
       `).join("")}
     </section>
@@ -298,7 +305,7 @@ function capacityChartGroup(row) {
       </div>
       ${capacityMetricLane("Capacidade", row.capacitySeconds, row.capacitySeconds, "#d9e2ec", "100% disponivel", true)}
       ${capacityMetricLane("Plano", row.plannedSeconds, row.capacitySeconds, "#f59e0b", `${formatPercent(row.capacityUse)} da capacidade`)}
-      ${capacityMetricLane("Realizado", row.actualSeconds, row.capacitySeconds, "#0f5f8f", `${formatPercent(row.actualCapacityUse)} da capacidade`)}
+      ${capacityMetricLane("Realizado", row.actualSeconds, row.capacitySeconds, "#0f5f8f", `${formatPercent(row.actualShare)} do realizado total | ${formatPercent(row.actualCapacityUse)} da capacidade`)}
     </section>
   `;
 }
