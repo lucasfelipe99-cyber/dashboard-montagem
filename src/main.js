@@ -3,6 +3,7 @@ import "vis-timeline/styles/vis-timeline-graph2d.min.css";
 import { createIcons, icons } from "lucide";
 import "./styles.css";
 import { loadDataset } from "./services/sheetsService.js";
+import { loadPlanningDataset } from "./services/planningService.js";
 import { getDataConnectionSettings } from "./services/settingsService.js";
 import { defaultFilters, Filters, applyFilters, todayFilters } from "./components/Filters.js";
 import { Header } from "./components/Header.js";
@@ -14,6 +15,7 @@ import { TimelinePage, mountTimelinePage } from "./pages/TimelinePage.js";
 import { Employees, mountEmployees } from "./pages/Employees.js";
 import { Products, mountProducts } from "./pages/Products.js";
 import { TimeAnalysis, mountTimeAnalysis } from "./pages/TimeAnalysis.js";
+import { Planning, mountPlanning } from "./pages/Planning.js";
 import { Database, mountDatabase } from "./pages/Database.js";
 import { Settings, mountSettings } from "./pages/Settings.js";
 import { addDaysISO, todayISO } from "./utils/dateUtils.js";
@@ -24,6 +26,7 @@ const app = document.getElementById("app");
 const state = {
   page: "overview",
   dataset: null,
+  planning: null,
   filteredRecords: [],
   filters: defaultFilters(),
   pendingFilters: defaultFilters(),
@@ -44,6 +47,7 @@ function currentMount() {
     employees: () => mountEmployees(records),
     products: () => mountProducts(records),
     times: () => mountTimeAnalysis(records),
+    planning: () => mountPlanning(records, state.planning, state.filters, refresh),
     settings: () => mountSettings(refreshAfterSettingsSave),
     database: () => mountDatabase(state.dataset)
   };
@@ -53,13 +57,14 @@ function currentMount() {
 function pageHtml() {
   if (state.loading) return loadingState();
   if (state.error && !state.dataset && state.page !== "settings") return `<div class="error-state">${state.error}</div>`;
-  if (!state.filteredRecords.length && !["database", "settings"].includes(state.page)) return emptyState();
+  if (!state.filteredRecords.length && !["database", "settings", "planning"].includes(state.page)) return emptyState();
   const pages = {
     overview: () => Overview(state.filteredRecords),
     timeline: () => TimelinePage(state.filteredRecords, state),
     employees: () => Employees(state.filteredRecords),
     products: () => Products(state.filteredRecords),
     times: () => TimeAnalysis(state.filteredRecords),
+    planning: () => Planning(state.filteredRecords, state.planning, state.filters),
     settings: () => Settings(state.dataset?.records || []),
     database: () => Database(state.dataset)
   };
@@ -203,8 +208,13 @@ async function refresh() {
   render();
   try {
     state.dataset = await loadDataset();
+    try {
+      state.planning = await loadPlanningDataset();
+    } catch (planningError) {
+      state.planning = { plans: [], warning: planningError.message };
+    }
     state.lastUpdate = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "medium" }).format(new Date());
-    state.error = state.dataset.warning || "";
+    state.error = [state.dataset.warning, state.planning?.warning].filter(Boolean).join(" | ");
     setFilteredRecords();
   } catch (error) {
     state.error = error.message;

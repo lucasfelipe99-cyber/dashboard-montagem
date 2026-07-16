@@ -56,6 +56,7 @@ function theoryRows(records, settings) {
 function connectionPanel(settings) {
   const primary = settings.dataConnection;
   const secondary = settings.secondaryDataConnection;
+  const planning = settings.planningConnection;
   return `
     <article class="panel settings-panel">
       <div class="section-title">
@@ -110,6 +111,38 @@ function connectionPanel(settings) {
           </div>
           <p class="muted connection-note">Para carregar automaticamente, compartilhe a planilha como "qualquer pessoa com o link pode ver" ou publique a aba DB na Web em formato CSV.</p>
         </div>
+      </div>
+    </article>
+
+    <article class="panel settings-panel">
+      <div class="section-title">
+        <div>
+          <h2>Base de planejamento</h2>
+          <p>Use uma planilha publica com as abas PLANO_MONTAGEM e PLANO_CORTE. A URL do Apps Script permite salvar os lancamentos direto no Sheets.</p>
+        </div>
+      </div>
+      <div class="connection-grid planning-connection-grid">
+        <label>ID ou URL da planilha
+          <input value="${planning.spreadsheetId || ""}" data-planning-connection="spreadsheetId" placeholder="https://docs.google.com/spreadsheets/d/...">
+        </label>
+        <label>Aba montagem
+          <input value="${planning.montagemSheetName || "PLANO_MONTAGEM"}" data-planning-connection="montagemSheetName" placeholder="PLANO_MONTAGEM">
+        </label>
+        <label>GID montagem
+          <input value="${planning.montagemSheetGid || ""}" data-planning-connection="montagemSheetGid">
+        </label>
+        <label>Aba corte
+          <input value="${planning.corteSheetName || "PLANO_CORTE"}" data-planning-connection="corteSheetName" placeholder="PLANO_CORTE">
+        </label>
+        <label>GID corte
+          <input value="${planning.corteSheetGid || ""}" data-planning-connection="corteSheetGid">
+        </label>
+        <label>Maquinas de corte
+          <input type="number" min="1" value="${planning.cuttingMachines || 14}" data-planning-connection="cuttingMachines">
+        </label>
+        <label class="wide-field">URL do Apps Script
+          <input value="${planning.scriptUrl || ""}" data-planning-connection="scriptUrl" placeholder="https://script.google.com/macros/s/.../exec">
+        </label>
       </div>
     </article>
   `;
@@ -210,9 +243,10 @@ export function mountSettings(onSave) {
   document.querySelector("[data-action='save-settings']")?.addEventListener("click", () => {
     const dataConnection = Object.fromEntries([...document.querySelectorAll("[data-connection]")].map((input) => [input.dataset.connection, input.value]));
     const secondaryDataConnection = Object.fromEntries([...document.querySelectorAll("[data-secondary-connection]")].map((input) => [input.dataset.secondaryConnection, input.value]));
+    const planningConnection = Object.fromEntries([...document.querySelectorAll("[data-planning-connection]")].map((input) => [input.dataset.planningConnection, input.value]));
     const employeeSchedules = [...document.querySelectorAll(".schedule-row")].map(readRow);
     const theoreticalTimes = [...document.querySelectorAll(".theory-row")].map(readRow);
-    saveOperationalSettings({ dataConnection, secondaryDataConnection, employeeSchedules, theoreticalTimes });
+    saveOperationalSettings({ dataConnection, secondaryDataConnection, planningConnection, employeeSchedules, theoreticalTimes });
     onSave?.();
   });
 

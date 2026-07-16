@@ -89,6 +89,13 @@ p { color: var(--muted); }
 .connection-stack h3 { margin: 0 0 10px; color: var(--ink); }
 .connection-grid { display: grid; grid-template-columns: minmax(180px, .7fr) minmax(260px, 1.7fr) minmax(130px, .55fr) minmax(130px, .55fr) minmax(160px, .7fr); gap: 12px; align-items: end; }
 .secondary-connection-grid { grid-template-columns: minmax(180px, .7fr) minmax(260px, 1.7fr) minmax(130px, .55fr) minmax(130px, .55fr); }
+.planning-connection-grid { grid-template-columns: minmax(280px, 1.4fr) repeat(5, minmax(120px, .6fr)); }
+.wide-field { grid-column: 1 / -1; }
+.planning-form { display: grid; grid-template-columns: minmax(120px, .6fr) minmax(140px, .7fr) minmax(120px, .6fr) minmax(220px, 1.2fr) minmax(120px, .6fr) minmax(150px, .7fr); gap: 12px; align-items: end; }
+.planning-form-panel .section-title { align-items: start; }
+.planning-kpis { grid-template-columns: repeat(4, minmax(170px, 1fr)); }
+.planning-kpis small { color: var(--muted); font-size: 12px; font-weight: 800; }
+.planning-bar-row { grid-template-columns: minmax(90px, 130px) minmax(0, 1fr) minmax(150px, max-content); cursor: default; }
 .responsive-table { overflow-x: auto; }
 .settings-table { width: 100%; border-collapse: collapse; min-width: 980px; }
 .settings-table th, .settings-table td { border-bottom: 1px solid #edf2f7; padding: 8px; text-align: left; vertical-align: middle; }
@@ -181,6 +188,7 @@ p { color: var(--muted); }
   .kpi-grid { grid-template-columns: repeat(3, 1fr); }
   .insight-grid { grid-template-columns: repeat(2, 1fr); }
   .connection-grid { grid-template-columns: repeat(2, 1fr); }
+  .planning-form, .planning-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 760px) {
@@ -195,5 +203,6 @@ p { color: var(--muted); }
   .filters, .kpi-grid, .chart-grid, .two-column, .insight-grid { grid-template-columns: 1fr; }
   .employee-summary-panel, .employee-summary-panel .mini-kpis { grid-template-columns: 1fr; }
   .connection-grid { grid-template-columns: 1fr; }
+  .planning-form, .planning-kpis, .planning-bar-row { grid-template-columns: 1fr; }
   .content { padding: 12px; }
 }

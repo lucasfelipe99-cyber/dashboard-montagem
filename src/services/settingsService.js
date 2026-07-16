@@ -89,12 +89,27 @@ function defaultSecondaryConnection(parsed = {}) {
   };
 }
 
+function defaultPlanningConnection(parsed = {}) {
+  const extracted = extractSpreadsheetInfo(parsed.spreadsheetId || "");
+  return {
+    dataSource: "google-sheets",
+    spreadsheetId: extracted.spreadsheetId || "",
+    montagemSheetName: clean(parsed.montagemSheetName || "PLANO_MONTAGEM") || "PLANO_MONTAGEM",
+    montagemSheetGid: clean(parsed.montagemSheetGid || extracted.sheetGid),
+    corteSheetName: clean(parsed.corteSheetName || "PLANO_CORTE") || "PLANO_CORTE",
+    corteSheetGid: clean(parsed.corteSheetGid),
+    scriptUrl: clean(parsed.scriptUrl),
+    cuttingMachines: Number(parsed.cuttingMachines || 14)
+  };
+}
+
 export function loadOperationalSettings() {
   try {
     const parsed = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
     return {
       dataConnection: defaultConnection(parsed.dataConnection),
       secondaryDataConnection: defaultSecondaryConnection(parsed.secondaryDataConnection),
+      planningConnection: defaultPlanningConnection(parsed.planningConnection),
       employeeSchedules: mergeDefaultEmployeeSchedules(Array.isArray(parsed.employeeSchedules) ? parsed.employeeSchedules : []),
       theoreticalTimes: Array.isArray(parsed.theoreticalTimes) ? parsed.theoreticalTimes : []
     };
@@ -114,6 +129,7 @@ export function loadOperationalSettings() {
         sheetGid: CONFIG.secondarySheetGid,
         refreshInterval: CONFIG.refreshInterval
       },
+      planningConnection: defaultPlanningConnection(),
       employeeSchedules: mergeDefaultEmployeeSchedules(),
       theoreticalTimes: []
     };
@@ -123,6 +139,7 @@ export function loadOperationalSettings() {
 export function saveOperationalSettings(settings) {
   const parsedConnection = extractSpreadsheetInfo(settings.dataConnection?.spreadsheetId || "");
   const parsedSecondaryConnection = extractSpreadsheetInfo(settings.secondaryDataConnection?.spreadsheetId || "");
+  const parsedPlanningConnection = extractSpreadsheetInfo(settings.planningConnection?.spreadsheetId || "");
   const normalized = {
     dataConnection: {
       dataSource: "google-sheets",
@@ -137,6 +154,16 @@ export function saveOperationalSettings(settings) {
       sheetName: clean(settings.secondaryDataConnection?.sheetName || CONFIG.secondarySheetName) || "DB",
       sheetGid: clean(settings.secondaryDataConnection?.sheetGid || parsedSecondaryConnection.sheetGid || CONFIG.secondarySheetGid),
       refreshInterval: refreshIntervalValue(settings.dataConnection?.refreshInterval)
+    },
+    planningConnection: {
+      dataSource: "google-sheets",
+      spreadsheetId: parsedPlanningConnection.spreadsheetId,
+      montagemSheetName: clean(settings.planningConnection?.montagemSheetName || "PLANO_MONTAGEM") || "PLANO_MONTAGEM",
+      montagemSheetGid: clean(settings.planningConnection?.montagemSheetGid || parsedPlanningConnection.sheetGid),
+      corteSheetName: clean(settings.planningConnection?.corteSheetName || "PLANO_CORTE") || "PLANO_CORTE",
+      corteSheetGid: clean(settings.planningConnection?.corteSheetGid),
+      scriptUrl: clean(settings.planningConnection?.scriptUrl),
+      cuttingMachines: Number(settings.planningConnection?.cuttingMachines || 14)
     },
     employeeSchedules: (settings.employeeSchedules || []).map(normalizeSchedule).filter((item) => item.employee && item.start && item.end),
     theoreticalTimes: (settings.theoreticalTimes || [])
@@ -193,6 +220,10 @@ export function getDataConnectionSettings() {
 
 export function getSecondaryDataConnectionSettings() {
   return loadOperationalSettings().secondaryDataConnection;
+}
+
+export function getPlanningConnectionSettings() {
+  return loadOperationalSettings().planningConnection;
 }
 
 export function extractSpreadsheetId(value) {
