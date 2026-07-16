@@ -299,6 +299,20 @@ function structuresForProduct(structures, product) {
   return structures.filter((item) => normalize(item.product) === productKey && Number(item.unitsPerProduct) > 0);
 }
 
+function structureTime(item, field) {
+  return parseTime(item?.[field]) || 0;
+}
+
+function cutUnitForStructure(units, structure) {
+  return unitFor(units, "corte", structure.stage, structure.cutStageCode) || structureTime(structure, "cutUnitTime");
+}
+
+function assemblyUnitForProduct(units, structures, product) {
+  const matches = structuresForProduct(structures, product);
+  const configured = matches.map((item) => structureTime(item, "assemblyUnitTime")).find(Boolean);
+  return configured || unitFor(units, "montagem", product) || unitFor(units, "all", product);
+}
+
 function structurePieces(row, productQuantity) {
   const quantity = productQuantity * Number(row.unitsPerProduct || 0);
   const stages = row.piecesPerStage ? quantity / Number(row.piecesPerStage) : 0;
@@ -357,8 +371,8 @@ function planningItemRow() {
   return `
     <tr class="planning-item-row">
       <td>
-        <input name="item" list="planning-items" placeholder="Produto ou tipo de corte" required>
-        <small data-theoretical-note>Informe o item e a quantidade.</small>
+        <input name="item" list="planning-items" placeholder="Produto pronto" required>
+        <small data-theoretical-note>Escolha um produto pronto da estrutura.</small>
       </td>
       <td><input type="number" min="0" step="1" name="quantity" required></td>
       <td><input name="theoreticalTotal" placeholder="Automatico" readonly required></td>
@@ -371,12 +385,7 @@ function planningItemRow() {
 function planForm(records, plans, filters) {
   const settings = loadOperationalSettings();
   const structures = settings.productStructures || [];
-  const products = unique([
-    ...productionRecords(records).map((record) => record.product),
-    ...plans.map((plan) => plan.item),
-    ...structures.map((item) => item.product),
-    ...structures.map((item) => item.stage)
-  ]);
+  const products = unique(structures.map((item) => item.product));
   const unitsPayload = encodeURIComponent(JSON.stringify(theoreticalUnits(records)));
   const structuresPayload = encodeURIComponent(JSON.stringify(structures));
   return `
@@ -406,7 +415,6 @@ function planForm(records, plans, filters) {
           </label>
           <label>Modo do corte
             <select name="cutMode">
-              <option value="items">Itens de corte</option>
               <option value="product">Produto pronto</option>
             </select>
           </label>
@@ -418,7 +426,7 @@ function planForm(records, plans, filters) {
           <table class="planning-entry-table">
             <thead>
               <tr>
-                <th>Produto / Palco-Tipo</th>
+                <th>Produto pronto</th>
                 <th>Qtd planejada</th>
                 <th>Tempo teorico total</th>
                 <th>Observacao</th>
@@ -514,7 +522,7 @@ export function mountPlanning(records, planning, filters, onSave) {
       const matches = structuresForProduct(structures, item);
       const missingUnits = [];
       const total = matches.reduce((sum, structure) => {
-        const unit = unitFor(units, "corte", structure.stage, structure.cutStageCode);
+        const unit = cutUnitForStructure(units, structure);
         if (!unit) missingUnits.push(structure.cutStageCode || structure.stage);
         return sum + (unit * structurePieces(structure, quantity).quantity);
       }, 0);
@@ -533,14 +541,16 @@ export function mountPlanning(records, planning, filters, onSave) {
       refreshPlanningTotals();
       return;
     }
-    const unit = unitFor(units, type, item);
+    const unit = type === "montagem"
+      ? assemblyUnitForProduct(units, structures, item)
+      : unitFor(units, type, item);
     const total = unit * quantity;
     totalInput.value = total ? secondsToDuration(total) : "";
     const note = row.querySelector("[data-theoretical-note]");
     if (note) {
       note.textContent = unit
         ? `Tempo unitario encontrado: ${secondsToDuration(unit)} x ${number(quantity)} un. = ${secondsToDuration(total)}`
-        : "Tempo teorico unitario nao encontrado para este produto/tipo. Cadastre o tempo na base real ou em Configuracoes.";
+        : "Tempo teorico unitario nao encontrado para este produto pronto. Cadastre o tempo de montagem na estrutura ou na base real.";
     }
     refreshPlanningTotals();
   };
@@ -604,7 +614,7 @@ export function mountPlanning(records, planning, filters, onSave) {
           return;
         }
         matches.forEach((structure) => {
-          const unit = unitFor(units, "corte", structure.stage, structure.cutStageCode);
+          const unit = cutUnitForStructure(units, structure);
           if (!unit) {
             issues.push(`${row.item} > ${structure.cutStageCode || structure.stage}: sem tempo teorico`);
             return;

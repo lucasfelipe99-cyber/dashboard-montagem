@@ -61,6 +61,9 @@ function structureRows(settings) {
       <td><input value="${item.cutStageCode || ""}" data-setting="cutStageCode" placeholder="P17"></td>
       <td><input type="number" min="0" step="0.01" value="${item.unitsPerProduct || ""}" data-setting="unitsPerProduct"></td>
       <td><input type="number" min="0" step="0.01" value="${item.piecesPerStage || ""}" data-setting="piecesPerStage"></td>
+      <td><input value="${formatSettingTime(item.cutUnitTime) || item.cutUnitTime || ""}" data-setting="cutUnitTime" placeholder="00:00:47"></td>
+      <td><input value="${formatSettingTime(item.cutBatchTime) || item.cutBatchTime || ""}" data-setting="cutBatchTime" placeholder="00:38:44"></td>
+      <td><input value="${formatSettingTime(item.assemblyUnitTime) || item.assemblyUnitTime || ""}" data-setting="assemblyUnitTime" placeholder="00:05:00"></td>
       <td><button class="icon-button danger" data-action="remove-row" aria-label="Remover linha"><i data-lucide="trash-2"></i></button></td>
     </tr>
   `).join("");
@@ -222,7 +225,7 @@ export function Settings(records) {
         </div>
         <div class="responsive-table">
           <table class="settings-table structure-settings-table" id="structure-settings">
-            <thead><tr><th>Produto pronto</th><th>Palco / item de corte</th><th>Codigo palco</th><th>Un. por produto</th><th>Pecas por palco</th><th></th></tr></thead>
+            <thead><tr><th>Produto pronto</th><th>Palco / item de corte</th><th>Codigo palco</th><th>Un. por produto</th><th>Pecas por palco</th><th>Tempo corte un.</th><th>Tempo corte palco</th><th>Tempo montagem un.</th><th></th></tr></thead>
             <tbody>${structureRows(settings)}</tbody>
           </table>
         </div>
@@ -272,6 +275,9 @@ export function mountSettings(onSave) {
         <td><input data-setting="cutStageCode" placeholder="P17"></td>
         <td><input type="number" min="0" step="0.01" data-setting="unitsPerProduct" placeholder="1"></td>
         <td><input type="number" min="0" step="0.01" data-setting="piecesPerStage" placeholder="88"></td>
+        <td><input data-setting="cutUnitTime" placeholder="00:00:47"></td>
+        <td><input data-setting="cutBatchTime" placeholder="00:38:44"></td>
+        <td><input data-setting="assemblyUnitTime" placeholder="00:05:00"></td>
         <td><button class="icon-button danger" data-action="remove-row" aria-label="Remover linha"><i data-lucide="trash-2"></i></button></td>
       </tr>
     `);

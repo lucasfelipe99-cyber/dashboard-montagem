@@ -64,7 +64,10 @@ function normalizeProductStructure(item) {
     stage: clean(item.stage).toUpperCase(),
     piecesPerStage: Number(item.piecesPerStage || 0),
     unitsPerProduct: Number(item.unitsPerProduct || 0),
-    cutStageCode: clean(item.cutStageCode).toUpperCase()
+    cutStageCode: clean(item.cutStageCode).toUpperCase(),
+    cutBatchTime: formatSettingTime(item.cutBatchTime) || clean(item.cutBatchTime),
+    cutUnitTime: formatSettingTime(item.cutUnitTime) || clean(item.cutUnitTime),
+    assemblyUnitTime: formatSettingTime(item.assemblyUnitTime) || clean(item.assemblyUnitTime)
   };
 }
 
@@ -78,7 +81,10 @@ function mergeDefaultProductStructures(savedStructures = []) {
     const normalized = normalizeProductStructure(item);
     return [productStructureKey(normalized), normalized];
   }));
-  saved.forEach((item) => map.set(productStructureKey(item), item));
+  saved.forEach((item) => {
+    const key = productStructureKey(item);
+    map.set(key, { ...(map.get(key) || {}), ...item });
+  });
   return [...map.values()].sort((a, b) => `${a.product}|${a.cutStageCode}|${a.stage}`.localeCompare(`${b.product}|${b.cutStageCode}|${b.stage}`));
 }
 
