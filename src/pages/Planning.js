@@ -236,6 +236,21 @@ function capacityChartGroup(row) {
   `;
 }
 
+function planningItemRow() {
+  return `
+    <tr class="planning-item-row">
+      <td>
+        <input name="item" list="planning-items" placeholder="Produto ou tipo de corte" required>
+        <small data-theoretical-note>Informe o item e a quantidade.</small>
+      </td>
+      <td><input type="number" min="0" step="1" name="quantity" required></td>
+      <td><input name="theoreticalTotal" placeholder="Automatico" readonly required></td>
+      <td><input name="observation" placeholder="Opcional"></td>
+      <td><button class="button" type="button" data-action="remove-plan-row">Remover</button></td>
+    </tr>
+  `;
+}
+
 function planForm(records, plans, filters) {
   const products = unique([
     ...productionRecords(records).map((record) => record.product),
@@ -252,35 +267,44 @@ function planForm(records, plans, filters) {
       </div>
       <datalist id="planning-items">${products.map((item) => `<option value="${item}"></option>`).join("")}</datalist>
       <form id="planning-form" class="planning-form" data-theoretical-units="${unitsPayload}">
-        <label>Base
-          <select name="type">
-            <option value="montagem">Montagem</option>
-            <option value="corte">Corte</option>
-          </select>
-        </label>
-        <label>Data
-          <input type="date" name="date" value="${filters.startDate || todayISO()}" required>
-        </label>
-        <label>Turno
-          <select name="shift" required>
-            ${SHIFT_OPTIONS.map((shift) => `<option value="${shift}">${shift} turno</option>`).join("")}
-          </select>
-        </label>
-        <label>Produto / Palco-Tipo
-          <input name="item" list="planning-items" placeholder="Produto ou tipo de corte" required>
-        </label>
-        <label>Qtd planejada
-          <input type="number" min="0" step="1" name="quantity" required>
-        </label>
-        <label>Tempo teorico total
-          <input name="theoreticalTotal" placeholder="Automatico" readonly required>
-        </label>
-        <div class="planning-unit-note wide-field" data-theoretical-note>Selecione o produto/tipo e informe a quantidade para calcular o tempo teorico total.</div>
-        <label class="wide-field">Observacao
-          <input name="observation" placeholder="Opcional">
-        </label>
-        <div class="filter-actions">
-          <button class="button primary" type="submit"><i data-lucide="save"></i> Salvar no Sheets</button>
+        <div class="planning-form-head">
+          <label>Base
+            <select name="type">
+              <option value="montagem">Montagem</option>
+              <option value="corte">Corte</option>
+            </select>
+          </label>
+          <label>Data
+            <input type="date" name="date" value="${filters.startDate || todayISO()}" required>
+          </label>
+          <label>Turno
+            <select name="shift" required>
+              ${SHIFT_OPTIONS.map((shift) => `<option value="${shift}">${shift} turno</option>`).join("")}
+            </select>
+          </label>
+          <div class="filter-actions">
+            <button class="button" type="button" data-action="add-plan-row">+ Linha</button>
+          </div>
+        </div>
+        <div class="responsive-table">
+          <table class="planning-entry-table">
+            <thead>
+              <tr>
+                <th>Produto / Palco-Tipo</th>
+                <th>Qtd planejada</th>
+                <th>Tempo teorico total</th>
+                <th>Observacao</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody data-plan-rows>
+              ${planningItemRow()}
+            </tbody>
+          </table>
+        </div>
+        <div class="planning-form-footer">
+          <span class="planning-unit-note" data-planning-total>1 linha pronta para lancamento.</span>
+          <button class="button primary" type="submit"><i data-lucide="save"></i> Salvar lancamentos no Sheets</button>
         </div>
       </form>
     </article>
@@ -354,46 +378,93 @@ export function mountPlanning(records, planning, filters, onSave) {
   ], { height: "340px" });
 
   const formEl = document.querySelector("#planning-form");
-  const refreshTheoreticalTotal = () => {
-    if (!formEl) return;
+  const refreshPlanningTotals = () => {
+    const rows = [...document.querySelectorAll(".planning-item-row")];
+    const validRows = rows.filter((row) => row.querySelector("[name='item']").value && row.querySelector("[name='quantity']").value);
+    const totalSeconds = rows.reduce((sum, row) => sum + (parseTime(row.querySelector("[name='theoreticalTotal']").value) || 0), 0);
+    const summary = document.querySelector("[data-planning-total]");
+    if (summary) {
+      summary.textContent = `${validRows.length} linha(s) preenchida(s) | Tempo total planejado: ${secondsToDuration(totalSeconds)}`;
+    }
+  };
+  const refreshTheoreticalTotal = (row) => {
+    if (!formEl || !row) return;
     const units = JSON.parse(decodeURIComponent(formEl.dataset.theoreticalUnits || "%7B%7D"));
     const type = formEl.elements.type.value;
-    const item = normalize(formEl.elements.item.value);
-    const quantity = Number(formEl.elements.quantity.value || 0);
+    const itemInput = row.querySelector("[name='item']");
+    const quantityInput = row.querySelector("[name='quantity']");
+    const totalInput = row.querySelector("[name='theoreticalTotal']");
+    const item = normalize(itemInput?.value);
+    const quantity = Number(quantityInput?.value || 0);
     const unit = units[`${type}|${item}`] || units[`all|${item}`] || 0;
     const total = unit * quantity;
-    formEl.elements.theoreticalTotal.value = total ? secondsToDuration(total) : "";
-    const note = formEl.querySelector("[data-theoretical-note]");
+    totalInput.value = total ? secondsToDuration(total) : "";
+    const note = row.querySelector("[data-theoretical-note]");
     if (note) {
       note.textContent = unit
         ? `Tempo unitario encontrado: ${secondsToDuration(unit)} x ${number(quantity)} un. = ${secondsToDuration(total)}`
         : "Tempo teorico unitario nao encontrado para este produto/tipo. Cadastre o tempo na base real ou em Configuracoes.";
     }
+    refreshPlanningTotals();
   };
-  formEl?.elements.type.addEventListener("change", refreshTheoreticalTotal);
-  formEl?.elements.item.addEventListener("input", refreshTheoreticalTotal);
-  formEl?.elements.quantity.addEventListener("input", refreshTheoreticalTotal);
-  refreshTheoreticalTotal();
+  const refreshAllRows = () => {
+    document.querySelectorAll(".planning-item-row").forEach(refreshTheoreticalTotal);
+  };
+  formEl?.elements.type.addEventListener("change", refreshAllRows);
+  formEl?.querySelector("[data-plan-rows]")?.addEventListener("input", (event) => {
+    const row = event.target.closest(".planning-item-row");
+    if (row && ["item", "quantity"].includes(event.target.name)) refreshTheoreticalTotal(row);
+  });
+  formEl?.querySelector("[data-plan-rows]")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-action='remove-plan-row']");
+    if (!button) return;
+    const rows = [...formEl.querySelectorAll(".planning-item-row")];
+    if (rows.length === 1) {
+      rows[0].querySelectorAll("input").forEach((input) => { input.value = ""; });
+      refreshTheoreticalTotal(rows[0]);
+      return;
+    }
+    button.closest(".planning-item-row")?.remove();
+    refreshPlanningTotals();
+  });
+  formEl?.querySelector("[data-action='add-plan-row']")?.addEventListener("click", () => {
+    formEl.querySelector("[data-plan-rows]")?.insertAdjacentHTML("beforeend", planningItemRow());
+    refreshPlanningTotals();
+  });
+  refreshAllRows();
 
   formEl?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const theoreticalTotalSeconds = parseTime(form.get("theoreticalTotal"));
-    if (!theoreticalTotalSeconds) {
-      alert("Informe o tempo teorico total no formato 08:30:00.");
+    const rowsToSave = [...event.currentTarget.querySelectorAll(".planning-item-row")]
+      .map((row) => ({
+        item: normalize(row.querySelector("[name='item']").value),
+        quantity: Number(row.querySelector("[name='quantity']").value || 0),
+        theoreticalTotalSeconds: parseTime(row.querySelector("[name='theoreticalTotal']").value),
+        observation: row.querySelector("[name='observation']").value
+      }))
+      .filter((row) => row.item || row.quantity || row.theoreticalTotalSeconds);
+    if (!rowsToSave.length) {
+      alert("Inclua pelo menos uma linha de plano.");
+      return;
+    }
+    if (rowsToSave.some((row) => !row.item || !row.quantity || !row.theoreticalTotalSeconds)) {
+      alert("Preencha produto/tipo e quantidade em todas as linhas. O tempo teorico precisa ser calculado automaticamente.");
       return;
     }
     try {
-      await savePlanRecord({
-        type: form.get("type"),
-        date: form.get("date"),
-        shift: form.get("shift"),
-        item: normalize(form.get("item")),
-        quantity: Number(form.get("quantity") || 0),
-        theoreticalTotalSeconds,
-        observation: form.get("observation")
-      });
-      alert("Plano enviado para o Google Sheets. A tela sera atualizada.");
+      for (const row of rowsToSave) {
+        await savePlanRecord({
+          type: form.get("type"),
+          date: form.get("date"),
+          shift: form.get("shift"),
+          item: row.item,
+          quantity: row.quantity,
+          theoreticalTotalSeconds: row.theoreticalTotalSeconds,
+          observation: row.observation
+        });
+      }
+      alert(`${rowsToSave.length} lancamento(s) enviado(s) para o Google Sheets. A tela sera atualizada.`);
       onSave?.();
     } catch (error) {
       alert(error.message);
