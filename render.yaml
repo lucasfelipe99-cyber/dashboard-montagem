@@ -1,0 +1,10 @@
+services:
+  - type: static
+    name: dashboard-montagem
+    plan: free
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
