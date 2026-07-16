@@ -142,7 +142,8 @@ function itemComparisonRows(records, plans) {
         plannedSeconds: 0,
         actualSeconds: 0,
         timeVariance: 0,
-        fulfillment: 0
+        fulfillment: 0,
+        situation: "Planejado"
       });
     }
     return map.get(key);
@@ -161,8 +162,9 @@ function itemComparisonRows(records, plans) {
       (!plan.shift || normalizeShiftValue(plan.shift) === normalizeShiftValue(record.shift)) &&
       normalize(plan.item) === normalize(record.product)
     );
-    if (!matchingPlan) return;
-    const row = ensure(record.sourceType, record.product, matchingPlan.date, matchingPlan.shift);
+    const row = matchingPlan
+      ? ensure(record.sourceType, record.product, matchingPlan.date, matchingPlan.shift)
+      : ensure(record.sourceType, record.product, record.date, normalizeShiftValue(record.shift));
     row.actualQuantity += record.quantity;
     row.actualSeconds += record.realSeconds;
   });
@@ -172,7 +174,8 @@ function itemComparisonRows(records, plans) {
       ...row,
       quantityVariance: row.actualQuantity - row.plannedQuantity,
       timeVariance: row.actualSeconds - row.plannedSeconds,
-      fulfillment: safeDivide(row.actualQuantity, row.plannedQuantity) * 100
+      fulfillment: safeDivide(row.actualQuantity, row.plannedQuantity) * 100,
+      situation: row.plannedQuantity ? row.actualQuantity ? "Planejado realizado" : "Planejado nao realizado" : "Nao planejado"
     }))
     .sort((a, b) => `${a.date}|${a.tipo}|${a.item}`.localeCompare(`${b.date}|${b.tipo}|${b.item}`));
 }
@@ -192,7 +195,8 @@ function periodItemRows(records, plans) {
         plannedSeconds: 0,
         actualSeconds: 0,
         timeVariance: 0,
-        fulfillment: 0
+        fulfillment: 0,
+        situation: "Planejado"
       });
     }
     const row = map.get(key);
@@ -206,7 +210,8 @@ function periodItemRows(records, plans) {
       ...row,
       quantityVariance: row.actualQuantity - row.plannedQuantity,
       timeVariance: row.actualSeconds - row.plannedSeconds,
-      fulfillment: safeDivide(row.actualQuantity, row.plannedQuantity) * 100
+      fulfillment: safeDivide(row.actualQuantity, row.plannedQuantity) * 100,
+      situation: row.plannedQuantity ? row.actualQuantity ? "Planejado realizado" : "Planejado nao realizado" : "Nao planejado"
     }))
     .sort((a, b) => `${a.tipo}|${a.item}`.localeCompare(`${b.tipo}|${b.item}`));
 }
@@ -415,13 +420,14 @@ export function mountPlanning(records, planning, filters, onSave) {
   renderTable("planning-comparison-table", periodItemRows(records, plans), [
     { title: "Base", field: "tipo" },
     { title: "Item planejado", field: "item", headerFilter: true },
+    { title: "Situacao", field: "situation", headerFilter: true },
     { title: "Qtd planejada", field: "plannedQuantity", formatter: (cell) => number(cell.getValue()), hozAlign: "right" },
     { title: "Qtd realizada", field: "actualQuantity", formatter: (cell) => number(cell.getValue()), hozAlign: "right" },
     { title: "Dif. qtd", field: "quantityVariance", formatter: (cell) => number(cell.getValue()), hozAlign: "right" },
     { title: "Horas planejadas", field: "plannedSeconds", formatter: (cell) => secondsToDuration(cell.getValue()) },
     { title: "Horas realizadas", field: "actualSeconds", formatter: (cell) => secondsToDuration(cell.getValue()) },
     { title: "Dif. horas", field: "timeVariance", formatter: (cell) => secondsToDuration(cell.getValue()) },
-    { title: "% realizado", field: "fulfillment", formatter: (cell) => formatPercent(cell.getValue()) }
+    { title: "% realizado", field: "fulfillment", formatter: (cell) => cell.getData().plannedQuantity ? formatPercent(cell.getValue()) : "Fora do plano" }
   ], { height: "240px" });
 
   renderTable("planning-table", plans, [
