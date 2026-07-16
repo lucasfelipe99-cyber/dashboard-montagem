@@ -5,6 +5,13 @@ export const CONFIG = {
   secondarySpreadsheetId: import.meta.env.VITE_SECONDARY_SPREADSHEET_ID || "1FrP-podqNheagKGK54EwmeKUVjkZ-ZP2ZYTWJJTcw9A",
   secondarySheetName: import.meta.env.VITE_SECONDARY_SHEET_NAME || "DB",
   secondarySheetGid: import.meta.env.VITE_SECONDARY_SHEET_GID || "809312188",
+  planningSpreadsheetId: import.meta.env.VITE_PLANNING_SPREADSHEET_ID || "1GQbKNCrnsjd7ytOMIPhQq1e7lg6j_-2LdEpmgZ22z8w",
+  planningMontagemSheetName: import.meta.env.VITE_PLANNING_MONTAGEM_SHEET_NAME || "PLANO_MONTAGEM",
+  planningMontagemSheetGid: import.meta.env.VITE_PLANNING_MONTAGEM_SHEET_GID || "0",
+  planningCorteSheetName: import.meta.env.VITE_PLANNING_CORTE_SHEET_NAME || "PLANO_CORTE",
+  planningCorteSheetGid: import.meta.env.VITE_PLANNING_CORTE_SHEET_GID || "",
+  planningScriptUrl: import.meta.env.VITE_PLANNING_SCRIPT_URL || "",
+  cuttingMachines: Number(import.meta.env.VITE_CUTTING_MACHINES || 14),
   refreshInterval: Number(import.meta.env.VITE_REFRESH_INTERVAL || 0),
   timezone: "America/Sao_Paulo"
 };

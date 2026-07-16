@@ -90,16 +90,16 @@ function defaultSecondaryConnection(parsed = {}) {
 }
 
 function defaultPlanningConnection(parsed = {}) {
-  const extracted = extractSpreadsheetInfo(parsed.spreadsheetId || "");
+  const extracted = extractSpreadsheetInfo(parsed.spreadsheetId || CONFIG.planningSpreadsheetId);
   return {
     dataSource: "google-sheets",
-    spreadsheetId: extracted.spreadsheetId || "",
-    montagemSheetName: clean(parsed.montagemSheetName || "PLANO_MONTAGEM") || "PLANO_MONTAGEM",
-    montagemSheetGid: clean(parsed.montagemSheetGid || extracted.sheetGid),
-    corteSheetName: clean(parsed.corteSheetName || "PLANO_CORTE") || "PLANO_CORTE",
-    corteSheetGid: clean(parsed.corteSheetGid),
-    scriptUrl: clean(parsed.scriptUrl),
-    cuttingMachines: Number(parsed.cuttingMachines || 14)
+    spreadsheetId: extracted.spreadsheetId || CONFIG.planningSpreadsheetId,
+    montagemSheetName: clean(parsed.montagemSheetName || CONFIG.planningMontagemSheetName) || "PLANO_MONTAGEM",
+    montagemSheetGid: clean(parsed.montagemSheetGid || extracted.sheetGid || CONFIG.planningMontagemSheetGid),
+    corteSheetName: clean(parsed.corteSheetName || CONFIG.planningCorteSheetName) || "PLANO_CORTE",
+    corteSheetGid: clean(parsed.corteSheetGid || CONFIG.planningCorteSheetGid),
+    scriptUrl: clean(parsed.scriptUrl || CONFIG.planningScriptUrl),
+    cuttingMachines: Number(parsed.cuttingMachines || CONFIG.cuttingMachines || 14)
   };
 }
 
@@ -157,13 +157,13 @@ export function saveOperationalSettings(settings) {
     },
     planningConnection: {
       dataSource: "google-sheets",
-      spreadsheetId: parsedPlanningConnection.spreadsheetId,
-      montagemSheetName: clean(settings.planningConnection?.montagemSheetName || "PLANO_MONTAGEM") || "PLANO_MONTAGEM",
-      montagemSheetGid: clean(settings.planningConnection?.montagemSheetGid || parsedPlanningConnection.sheetGid),
-      corteSheetName: clean(settings.planningConnection?.corteSheetName || "PLANO_CORTE") || "PLANO_CORTE",
-      corteSheetGid: clean(settings.planningConnection?.corteSheetGid),
-      scriptUrl: clean(settings.planningConnection?.scriptUrl),
-      cuttingMachines: Number(settings.planningConnection?.cuttingMachines || 14)
+      spreadsheetId: parsedPlanningConnection.spreadsheetId || CONFIG.planningSpreadsheetId,
+      montagemSheetName: clean(settings.planningConnection?.montagemSheetName || CONFIG.planningMontagemSheetName) || "PLANO_MONTAGEM",
+      montagemSheetGid: clean(settings.planningConnection?.montagemSheetGid || parsedPlanningConnection.sheetGid || CONFIG.planningMontagemSheetGid),
+      corteSheetName: clean(settings.planningConnection?.corteSheetName || CONFIG.planningCorteSheetName) || "PLANO_CORTE",
+      corteSheetGid: clean(settings.planningConnection?.corteSheetGid || CONFIG.planningCorteSheetGid),
+      scriptUrl: clean(settings.planningConnection?.scriptUrl || CONFIG.planningScriptUrl),
+      cuttingMachines: Number(settings.planningConnection?.cuttingMachines || CONFIG.cuttingMachines || 14)
     },
     employeeSchedules: (settings.employeeSchedules || []).map(normalizeSchedule).filter((item) => item.employee && item.start && item.end),
     theoreticalTimes: (settings.theoreticalTimes || [])
