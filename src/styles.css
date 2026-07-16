@@ -92,7 +92,7 @@ p { color: var(--muted); }
 .planning-connection-grid { grid-template-columns: minmax(280px, 1.4fr) repeat(5, minmax(120px, .6fr)); }
 .wide-field { grid-column: 1 / -1; }
 .planning-form { display: grid; gap: 12px; }
-.planning-form-head { display: grid; grid-template-columns: minmax(120px, .7fr) minmax(150px, .8fr) minmax(120px, .7fr) max-content; gap: 12px; align-items: end; }
+.planning-form-head { display: grid; grid-template-columns: minmax(120px, .7fr) minmax(150px, .8fr) minmax(120px, .7fr) minmax(160px, .8fr) max-content; gap: 12px; align-items: end; }
 .planning-form-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .planning-form-panel .section-title { align-items: start; }
 .planning-entry-table { width: 100%; min-width: 920px; border-collapse: collapse; }
@@ -126,6 +126,7 @@ p { color: var(--muted); }
 .capacity-lane-value small { color: var(--muted); font-size: 11px; font-weight: 800; }
 .responsive-table { overflow-x: auto; }
 .settings-table { width: 100%; border-collapse: collapse; min-width: 980px; }
+.structure-settings-table { min-width: 1080px; }
 .settings-table th, .settings-table td { border-bottom: 1px solid #edf2f7; padding: 8px; text-align: left; vertical-align: middle; }
 .settings-table th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0; }
 .settings-table input, .settings-table select { width: 100%; min-width: 130px; }

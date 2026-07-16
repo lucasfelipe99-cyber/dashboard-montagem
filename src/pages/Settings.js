@@ -53,6 +53,19 @@ function theoryRows(records, settings) {
   }).join("");
 }
 
+function structureRows(settings) {
+  return settings.productStructures.map((item) => `
+    <tr class="structure-row">
+      <td><input value="${item.product}" data-setting="product" list="structure-product-options"></td>
+      <td><input value="${item.stage}" data-setting="stage" list="structure-stage-options"></td>
+      <td><input value="${item.cutStageCode || ""}" data-setting="cutStageCode" placeholder="P17"></td>
+      <td><input type="number" min="0" step="0.01" value="${item.unitsPerProduct || ""}" data-setting="unitsPerProduct"></td>
+      <td><input type="number" min="0" step="0.01" value="${item.piecesPerStage || ""}" data-setting="piecesPerStage"></td>
+      <td><button class="icon-button danger" data-action="remove-row" aria-label="Remover linha"><i data-lucide="trash-2"></i></button></td>
+    </tr>
+  `).join("");
+}
+
 function connectionPanel(settings) {
   const primary = settings.dataConnection;
   const secondary = settings.secondaryDataConnection;
@@ -152,6 +165,8 @@ export function Settings(records) {
   const settings = loadOperationalSettings();
   const employees = [...new Set(records.map((record) => record.employee).filter(Boolean))].sort();
   const products = [...new Set(records.filter((record) => !record.isIdle).map((record) => record.product).filter(Boolean))].sort();
+  const structureProducts = [...new Set(settings.productStructures.map((item) => item.product).filter(Boolean))].sort();
+  const structureStages = [...new Set(settings.productStructures.map((item) => item.stage).filter(Boolean))].sort();
 
   return `
     <section class="page-heading">
@@ -160,6 +175,8 @@ export function Settings(records) {
     </section>
     <datalist id="employee-options">${employees.map((item) => `<option value="${item}"></option>`).join("")}</datalist>
     <datalist id="product-options">${products.map((item) => `<option value="${item}"></option>`).join("")}</datalist>
+    <datalist id="structure-product-options">${structureProducts.map((item) => `<option value="${item}"></option>`).join("")}</datalist>
+    <datalist id="structure-stage-options">${structureStages.map((item) => `<option value="${item}"></option>`).join("")}</datalist>
 
     <section class="settings-grid">
       ${connectionPanel(settings)}
@@ -192,6 +209,21 @@ export function Settings(records) {
           <table class="settings-table" id="theory-settings">
             <thead><tr><th>Montagem</th><th>Tempo teórico unitário</th><th>Valor da base</th><th></th></tr></thead>
             <tbody>${theoryRows(records, settings)}</tbody>
+          </table>
+        </div>
+      </article>
+      <article class="panel settings-panel">
+        <div class="section-title">
+          <div>
+            <h2>Estrutura de produtos para corte</h2>
+            <p>Cadastre quais palcos/itens formam cada produto pronto. O plano de corte usa esta estrutura para gerar as linhas automaticamente.</p>
+          </div>
+          <button class="button" data-action="add-structure"><i data-lucide="plus"></i> Estrutura</button>
+        </div>
+        <div class="responsive-table">
+          <table class="settings-table structure-settings-table" id="structure-settings">
+            <thead><tr><th>Produto pronto</th><th>Palco / item de corte</th><th>Codigo palco</th><th>Un. por produto</th><th>Pecas por palco</th><th></th></tr></thead>
+            <tbody>${structureRows(settings)}</tbody>
           </table>
         </div>
       </article>
@@ -232,6 +264,19 @@ export function mountSettings(onSave) {
     `);
   });
 
+  document.querySelector("[data-action='add-structure']")?.addEventListener("click", () => {
+    document.querySelector("#structure-settings tbody")?.insertAdjacentHTML("beforeend", `
+      <tr class="structure-row">
+        <td><input data-setting="product" list="structure-product-options" placeholder="Produto pronto"></td>
+        <td><input data-setting="stage" list="structure-stage-options" placeholder="Palco / item de corte"></td>
+        <td><input data-setting="cutStageCode" placeholder="P17"></td>
+        <td><input type="number" min="0" step="0.01" data-setting="unitsPerProduct" placeholder="1"></td>
+        <td><input type="number" min="0" step="0.01" data-setting="piecesPerStage" placeholder="88"></td>
+        <td><button class="icon-button danger" data-action="remove-row" aria-label="Remover linha"><i data-lucide="trash-2"></i></button></td>
+      </tr>
+    `);
+  });
+
   document.querySelectorAll("[data-action='remove-row']").forEach((button) => button.addEventListener("click", () => {
     button.closest("tr")?.remove();
   }));
@@ -246,7 +291,8 @@ export function mountSettings(onSave) {
     const planningConnection = Object.fromEntries([...document.querySelectorAll("[data-planning-connection]")].map((input) => [input.dataset.planningConnection, input.value]));
     const employeeSchedules = [...document.querySelectorAll(".schedule-row")].map(readRow);
     const theoreticalTimes = [...document.querySelectorAll(".theory-row")].map(readRow);
-    saveOperationalSettings({ dataConnection, secondaryDataConnection, planningConnection, employeeSchedules, theoreticalTimes });
+    const productStructures = [...document.querySelectorAll(".structure-row")].map(readRow);
+    saveOperationalSettings({ dataConnection, secondaryDataConnection, planningConnection, employeeSchedules, theoreticalTimes, productStructures });
     onSave?.();
   });
 

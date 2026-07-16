@@ -1,4 +1,5 @@
 import { CONFIG, WORK_SCHEDULE } from "../config.js";
+import { DEFAULT_PRODUCT_STRUCTURES } from "../data/productStructures.js";
 import { parseTime, secondsToDuration } from "../utils/dateUtils.js";
 
 const SETTINGS_KEY = "dashboard-montagem:operational-settings";
@@ -57,6 +58,30 @@ function normalizeSchedule(item) {
   };
 }
 
+function normalizeProductStructure(item) {
+  return {
+    product: clean(item.product).toUpperCase(),
+    stage: clean(item.stage).toUpperCase(),
+    piecesPerStage: Number(item.piecesPerStage || 0),
+    unitsPerProduct: Number(item.unitsPerProduct || 0),
+    cutStageCode: clean(item.cutStageCode).toUpperCase()
+  };
+}
+
+function productStructureKey(item) {
+  return `${normalize(item.product)}|${normalize(item.stage)}|${normalize(item.cutStageCode)}`;
+}
+
+function mergeDefaultProductStructures(savedStructures = []) {
+  const saved = savedStructures.map(normalizeProductStructure).filter((item) => item.product && item.stage && item.unitsPerProduct > 0);
+  const map = new Map(DEFAULT_PRODUCT_STRUCTURES.map((item) => {
+    const normalized = normalizeProductStructure(item);
+    return [productStructureKey(normalized), normalized];
+  }));
+  saved.forEach((item) => map.set(productStructureKey(item), item));
+  return [...map.values()].sort((a, b) => `${a.product}|${a.cutStageCode}|${a.stage}`.localeCompare(`${b.product}|${b.cutStageCode}|${b.stage}`));
+}
+
 function mergeDefaultEmployeeSchedules(savedSchedules = []) {
   const saved = savedSchedules.map(normalizeSchedule).filter((item) => item.employee && item.start && item.end);
   const defaultsWithOverrides = DEFAULT_EMPLOYEE_SCHEDULES.map((defaultItem) => {
@@ -111,7 +136,8 @@ export function loadOperationalSettings() {
       secondaryDataConnection: defaultSecondaryConnection(parsed.secondaryDataConnection),
       planningConnection: defaultPlanningConnection(parsed.planningConnection),
       employeeSchedules: mergeDefaultEmployeeSchedules(Array.isArray(parsed.employeeSchedules) ? parsed.employeeSchedules : []),
-      theoreticalTimes: Array.isArray(parsed.theoreticalTimes) ? parsed.theoreticalTimes : []
+      theoreticalTimes: Array.isArray(parsed.theoreticalTimes) ? parsed.theoreticalTimes : [],
+      productStructures: mergeDefaultProductStructures(Array.isArray(parsed.productStructures) ? parsed.productStructures : [])
     };
   } catch {
     return {
@@ -131,7 +157,8 @@ export function loadOperationalSettings() {
       },
       planningConnection: defaultPlanningConnection(),
       employeeSchedules: mergeDefaultEmployeeSchedules(),
-      theoreticalTimes: []
+      theoreticalTimes: [],
+      productStructures: mergeDefaultProductStructures()
     };
   }
 }
@@ -171,7 +198,8 @@ export function saveOperationalSettings(settings) {
         product: clean(item.product).toUpperCase(),
         theoreticalUnitTime: clean(item.theoreticalUnitTime)
       }))
-      .filter((item) => item.product && parseTime(item.theoreticalUnitTime))
+      .filter((item) => item.product && parseTime(item.theoreticalUnitTime)),
+    productStructures: mergeDefaultProductStructures(settings.productStructures || [])
   };
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(normalized));
   return normalized;
@@ -224,6 +252,10 @@ export function getSecondaryDataConnectionSettings() {
 
 export function getPlanningConnectionSettings() {
   return loadOperationalSettings().planningConnection;
+}
+
+export function getProductStructures() {
+  return loadOperationalSettings().productStructures;
 }
 
 export function extractSpreadsheetId(value) {

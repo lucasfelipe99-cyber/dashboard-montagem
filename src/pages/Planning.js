@@ -267,6 +267,44 @@ function theoreticalUnits(records) {
   return Object.fromEntries(map.entries());
 }
 
+function decodePayload(value, fallback) {
+  try {
+    return JSON.parse(decodeURIComponent(value || ""));
+  } catch {
+    return fallback;
+  }
+}
+
+function unitFor(units, type, item, code = "") {
+  const itemKey = normalize(item);
+  if (!itemKey && !normalize(code)) return 0;
+  const exact = units[`${type}|${itemKey}`] || units[`all|${itemKey}`];
+  if (exact) return exact;
+
+  const codeKey = normalize(code);
+  const entries = Object.entries(units);
+  const scoped = entries.filter(([key]) => key.startsWith(`${type}|`));
+  const candidates = scoped.length ? scoped : entries;
+  const codeMatch = codeKey ? candidates.find(([key]) => key.split("|")[1]?.split(/[^A-Z0-9]+/).includes(codeKey)) : null;
+  if (codeMatch) return codeMatch[1];
+  const nameMatch = candidates.find(([key]) => {
+    const normalizedKey = key.split("|")[1] || "";
+    return normalizedKey.includes(itemKey) || itemKey.includes(normalizedKey);
+  });
+  return nameMatch ? nameMatch[1] : 0;
+}
+
+function structuresForProduct(structures, product) {
+  const productKey = normalize(product);
+  return structures.filter((item) => normalize(item.product) === productKey && Number(item.unitsPerProduct) > 0);
+}
+
+function structurePieces(row, productQuantity) {
+  const quantity = productQuantity * Number(row.unitsPerProduct || 0);
+  const stages = row.piecesPerStage ? quantity / Number(row.piecesPerStage) : 0;
+  return { quantity, stages };
+}
+
 function capacityChart(rows) {
   return `
     <article class="panel chart-panel planning-capacity-panel">
@@ -331,11 +369,16 @@ function planningItemRow() {
 }
 
 function planForm(records, plans, filters) {
+  const settings = loadOperationalSettings();
+  const structures = settings.productStructures || [];
   const products = unique([
     ...productionRecords(records).map((record) => record.product),
-    ...plans.map((plan) => plan.item)
+    ...plans.map((plan) => plan.item),
+    ...structures.map((item) => item.product),
+    ...structures.map((item) => item.stage)
   ]);
   const unitsPayload = encodeURIComponent(JSON.stringify(theoreticalUnits(records)));
+  const structuresPayload = encodeURIComponent(JSON.stringify(structures));
   return `
     <article class="panel planning-form-panel">
       <div class="section-title">
@@ -345,7 +388,7 @@ function planForm(records, plans, filters) {
         </div>
       </div>
       <datalist id="planning-items">${products.map((item) => `<option value="${item}"></option>`).join("")}</datalist>
-      <form id="planning-form" class="planning-form" data-theoretical-units="${unitsPayload}">
+      <form id="planning-form" class="planning-form" data-theoretical-units="${unitsPayload}" data-product-structures="${structuresPayload}">
         <div class="planning-form-head">
           <label>Base
             <select name="type">
@@ -359,6 +402,12 @@ function planForm(records, plans, filters) {
           <label>Turno
             <select name="shift" required>
               ${SHIFT_OPTIONS.map((shift) => `<option value="${shift}">${shift} turno</option>`).join("")}
+            </select>
+          </label>
+          <label>Modo do corte
+            <select name="cutMode">
+              <option value="items">Itens de corte</option>
+              <option value="product">Produto pronto</option>
             </select>
           </label>
           <div class="filter-actions">
@@ -452,14 +501,39 @@ export function mountPlanning(records, planning, filters, onSave) {
   };
   const refreshTheoreticalTotal = (row) => {
     if (!formEl || !row) return;
-    const units = JSON.parse(decodeURIComponent(formEl.dataset.theoreticalUnits || "%7B%7D"));
+    const units = decodePayload(formEl.dataset.theoreticalUnits, {});
+    const structures = decodePayload(formEl.dataset.productStructures, []);
     const type = formEl.elements.type.value;
+    const cutMode = formEl.elements.cutMode?.value || "items";
     const itemInput = row.querySelector("[name='item']");
     const quantityInput = row.querySelector("[name='quantity']");
     const totalInput = row.querySelector("[name='theoreticalTotal']");
     const item = normalize(itemInput?.value);
     const quantity = Number(quantityInput?.value || 0);
-    const unit = units[`${type}|${item}`] || units[`all|${item}`] || 0;
+    if (type === "corte" && cutMode === "product" && item && quantity) {
+      const matches = structuresForProduct(structures, item);
+      const missingUnits = [];
+      const total = matches.reduce((sum, structure) => {
+        const unit = unitFor(units, "corte", structure.stage, structure.cutStageCode);
+        if (!unit) missingUnits.push(structure.cutStageCode || structure.stage);
+        return sum + (unit * structurePieces(structure, quantity).quantity);
+      }, 0);
+      totalInput.value = matches.length && !missingUnits.length && total ? secondsToDuration(total) : "";
+      const note = row.querySelector("[data-theoretical-note]");
+      if (note) {
+        const stages = matches.reduce((sum, structure) => sum + structurePieces(structure, quantity).stages, 0);
+        if (!matches.length) {
+          note.textContent = "Produto sem estrutura cadastrada em Configuracoes.";
+        } else if (missingUnits.length) {
+          note.textContent = `Estrutura encontrada (${matches.length} item(ns)), mas falta tempo teorico para: ${missingUnits.slice(0, 3).join(", ")}.`;
+        } else {
+          note.textContent = `${matches.length} item(ns) de corte | ${stages.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} palco(s) estimado(s) | Total ${secondsToDuration(total)}`;
+        }
+      }
+      refreshPlanningTotals();
+      return;
+    }
+    const unit = unitFor(units, type, item);
     const total = unit * quantity;
     totalInput.value = total ? secondsToDuration(total) : "";
     const note = row.querySelector("[data-theoretical-note]");
@@ -474,6 +548,7 @@ export function mountPlanning(records, planning, filters, onSave) {
     document.querySelectorAll(".planning-item-row").forEach(refreshTheoreticalTotal);
   };
   formEl?.elements.type.addEventListener("change", refreshAllRows);
+  formEl?.elements.cutMode?.addEventListener("change", refreshAllRows);
   formEl?.querySelector("[data-plan-rows]")?.addEventListener("input", (event) => {
     const row = event.target.closest(".planning-item-row");
     if (row && ["item", "quantity"].includes(event.target.name)) refreshTheoreticalTotal(row);
@@ -499,7 +574,11 @@ export function mountPlanning(records, planning, filters, onSave) {
   formEl?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const rowsToSave = [...event.currentTarget.querySelectorAll(".planning-item-row")]
+    const units = decodePayload(event.currentTarget.dataset.theoreticalUnits, {});
+    const structures = decodePayload(event.currentTarget.dataset.productStructures, []);
+    const baseType = form.get("type");
+    const cutMode = form.get("cutMode");
+    let rowsToSave = [...event.currentTarget.querySelectorAll(".planning-item-row")]
       .map((row) => ({
         item: normalize(row.querySelector("[name='item']").value),
         quantity: Number(row.querySelector("[name='quantity']").value || 0),
@@ -515,10 +594,49 @@ export function mountPlanning(records, planning, filters, onSave) {
       alert("Preencha produto/tipo e quantidade em todas as linhas. O tempo teorico precisa ser calculado automaticamente.");
       return;
     }
+    if (baseType === "corte" && cutMode === "product") {
+      const expandedRows = [];
+      const issues = [];
+      rowsToSave.forEach((row) => {
+        const matches = structuresForProduct(structures, row.item);
+        if (!matches.length) {
+          issues.push(`${row.item}: sem estrutura cadastrada`);
+          return;
+        }
+        matches.forEach((structure) => {
+          const unit = unitFor(units, "corte", structure.stage, structure.cutStageCode);
+          if (!unit) {
+            issues.push(`${row.item} > ${structure.cutStageCode || structure.stage}: sem tempo teorico`);
+            return;
+          }
+          const pieces = structurePieces(structure, row.quantity);
+          const stagesText = pieces.stages
+            ? `${pieces.stages.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} palco(s)`
+            : "palcos sem capacidade cadastrada";
+          expandedRows.push({
+            item: normalize(structure.stage),
+            quantity: pieces.quantity,
+            theoreticalTotalSeconds: unit * pieces.quantity,
+            observation: [
+              `Produto pronto: ${row.item}`,
+              `Qtd produto: ${number(row.quantity)}`,
+              structure.cutStageCode ? `Palco: ${structure.cutStageCode}` : "",
+              stagesText,
+              row.observation
+            ].filter(Boolean).join(" | ")
+          });
+        });
+      });
+      if (issues.length) {
+        alert(`Nao foi possivel desdobrar o plano de corte:\n${issues.slice(0, 8).join("\n")}`);
+        return;
+      }
+      rowsToSave = expandedRows;
+    }
     try {
       for (const row of rowsToSave) {
         await savePlanRecord({
-          type: form.get("type"),
+          type: baseType,
           date: form.get("date"),
           shift: form.get("shift"),
           item: row.item,
