@@ -118,27 +118,6 @@ function comparisonRows(records, plans, dates, filters = {}) {
   });
 }
 
-function dailyRows(records, plans, dates, filters = {}) {
-  return dates.flatMap((date) => ["montagem", "corte"].map((type) => {
-    const dayPlans = plans.filter((plan) => plan.date === date && plan.type === type);
-    const dayActual = productionRecords(records).filter((record) => record.date === date && record.sourceType === type);
-    const capacity = capacityDetails(type, [date], filters);
-    const plannedSeconds = dayPlans.reduce((sum, plan) => sum + plan.theoreticalTotalSeconds, 0);
-    const actualSeconds = dayActual.reduce((sum, record) => sum + record.realSeconds, 0);
-    return {
-      date,
-      tipo: typeLabels[type],
-      plannedQuantity: dayPlans.reduce((sum, plan) => sum + plan.quantity, 0),
-      actualQuantity: dayActual.reduce((sum, record) => sum + record.quantity, 0),
-      plannedSeconds,
-      actualSeconds,
-      capacitySeconds: capacity.seconds,
-      capacityUse: safeDivide(plannedSeconds, capacity.seconds) * 100,
-      actualCapacityUse: safeDivide(actualSeconds, capacity.seconds) * 100
-    };
-  }));
-}
-
 function itemComparisonRows(records, plans) {
   const production = productionRecords(records);
   const map = new Map();
@@ -420,10 +399,6 @@ export function Planning(records, planning, filters) {
       <div class="section-title"><h2>Plano lancado</h2><span>${plans.length} registro(s)</span></div>
       ${tableShell("planning-table")}
     </section>
-    <section class="panel">
-      <div class="section-title"><h2>Comparacao por dia e item</h2><span>${dates.length} dia(s)</span></div>
-      ${tableShell("planning-daily-table")}
-    </section>
   `;
 }
 
@@ -450,20 +425,6 @@ export function mountPlanning(records, planning, filters, onSave) {
     { title: "Qtd planejada", field: "quantity", formatter: (cell) => number(cell.getValue()), hozAlign: "right" },
     { title: "Tempo teorico", field: "theoreticalTotalSeconds", formatter: (cell) => secondsToDuration(cell.getValue()) },
     { title: "Observacao", field: "observation" }
-  ], { height: "340px" });
-
-  renderTable("planning-daily-table", itemComparisonRows(records, plans), [
-    { title: "Data", field: "date", headerFilter: true },
-    { title: "Base", field: "tipo", headerFilter: true },
-    { title: "Turno", field: "shift", headerFilter: true },
-    { title: "Item planejado", field: "item", headerFilter: true },
-    { title: "Qtd planejada", field: "plannedQuantity", formatter: (cell) => number(cell.getValue()), hozAlign: "right" },
-    { title: "Qtd realizada", field: "actualQuantity", formatter: (cell) => number(cell.getValue()), hozAlign: "right" },
-    { title: "Dif. qtd", field: "quantityVariance", formatter: (cell) => number(cell.getValue()), hozAlign: "right" },
-    { title: "Horas planejadas", field: "plannedSeconds", formatter: (cell) => secondsToDuration(cell.getValue()) },
-    { title: "Horas realizadas", field: "actualSeconds", formatter: (cell) => secondsToDuration(cell.getValue()) },
-    { title: "Dif. horas", field: "timeVariance", formatter: (cell) => secondsToDuration(cell.getValue()) },
-    { title: "% realizado", field: "fulfillment", formatter: (cell) => formatPercent(cell.getValue()) }
   ], { height: "340px" });
 
   const formEl = document.querySelector("#planning-form");
