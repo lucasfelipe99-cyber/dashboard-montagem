@@ -265,7 +265,15 @@ function splitTaskQuantity(quantity, unitSeconds, maxSeconds = 3600) {
   return chunks;
 }
 
-function createMachinePlan(items, units, machineCount = 14) {
+function productWaveCount(taskDefinitions, machineCount, productQuantity = 0) {
+  const totalSeconds = taskDefinitions.reduce((sum, item) => sum + item.totalSeconds, 0);
+  if (!productQuantity) return Math.max(1, Math.ceil(totalSeconds / (machineCount * 3600)));
+  const perProductSeconds = totalSeconds / productQuantity;
+  const productsPerHour = Math.max(1, Math.floor((machineCount * 3600) / perProductSeconds));
+  return Math.max(1, Math.ceil(productQuantity / productsPerHour));
+}
+
+function createMachinePlan(items, units, machineCount = 14, productQuantity = 0) {
   const machines = Array.from({ length: Math.max(1, Number(machineCount) || 14) }, (_, index) => ({
     machine: index + 1,
     seconds: 0,
@@ -283,8 +291,7 @@ function createMachinePlan(items, units, machineCount = 14) {
     })
     .filter((item) => item.unit && item.quantity > 0)
     .sort((a, b) => b.totalSeconds - a.totalSeconds);
-  const totalSeconds = taskDefinitions.reduce((sum, item) => sum + item.totalSeconds, 0);
-  const waveCount = Math.max(1, Math.ceil(totalSeconds / (machines.length * 3600)));
+  const waveCount = productWaveCount(taskDefinitions, machines.length, productQuantity);
   const waveQuantities = taskDefinitions.map((item) => ({
     ...item,
     quantities: splitQuantity(item.quantity, waveCount)
@@ -420,7 +427,7 @@ function productCutPreview(expansion, units, machineCount = 14, shift = "1", pro
   const totalQuantity = expansion.items.reduce((sum, item) => sum + item.quantity, 0);
   const totalStages = expansion.items.reduce((sum, item) => sum + item.stages, 0);
   const totalSeconds = expansion.items.reduce((sum, item) => sum + (cutUnitForStructure(units, item.structure) * item.quantity), 0);
-  const machinePlan = createMachinePlan(expansion.items, units, machineCount);
+  const machinePlan = createMachinePlan(expansion.items, units, machineCount, productQuantity);
   const activeMachines = machinePlan.filter((machine) => machine.tasks.length);
   return `
     <div class="planning-stage-preview">
@@ -458,7 +465,7 @@ function productCutPreview(expansion, units, machineCount = 14, shift = "1", pro
         <div class="planning-machine-preview">
           <div class="planning-machine-preview-title">
             <strong>Plano sugerido nas ${number(machinePlan.length)} maquinas</strong>
-            <span>${number(activeMachines.length)} maquina(s) com demanda | palcos misturados por ondas horarias</span>
+            <span>${number(activeMachines.length)} maquina(s) com demanda | minimo de 1 produto equivalente por hora quando houver capacidade</span>
           </div>
           ${hourlyProductOutput(machinePlan, expansion, startSeconds, productQuantity)}
           <div class="planning-machine-grid">
@@ -1045,7 +1052,7 @@ export function mountPlanning(records, planning, filters, onSave) {
           issues.push(`${row.item} > ${missingUnit.structure.cutStageCode || missingUnit.structure.stage}: sem tempo teorico`);
           return;
         }
-        createMachinePlan(expansion.items, units, machineCount).flatMap((machine) => machine.tasks).forEach((task) => {
+        createMachinePlan(expansion.items, units, machineCount, row.quantity).flatMap((machine) => machine.tasks).forEach((task) => {
           const structure = task.structure;
           const stagesText = task.stages
             ? `${task.stages.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} palco(s)`
