@@ -3,6 +3,8 @@ const SHEETS = {
   corte: "PLANO_CORTE"
 };
 
+const PLANNING_SPREADSHEET_ID = "1GQbKNCrnsjd7ytOMIPhQq1e7lg6j_-2LdEpmgZ22z8w";
+
 const HEADERS = [
   "ID",
   "Data",
@@ -29,7 +31,7 @@ function doPost(event) {
 
 function saveRecord_(payload) {
   const sheetName = SHEETS[payload.tipoBase] || SHEETS.montagem;
-  const sheet = getOrCreateSheet_(sheetName);
+  const sheet = getOrCreateSheet_(sheetName, payload.spreadsheetId);
   ensureHeaders_(sheet);
 
   const now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "dd/MM/yyyy HH:mm:ss");
@@ -59,12 +61,13 @@ function saveRecord_(payload) {
 
 function doGet() {
   return ContentService
-    .createTextOutput(JSON.stringify({ ok: true, service: "dashboard-planejamento" }))
+    .createTextOutput(JSON.stringify({ ok: true, service: "dashboard-planejamento", spreadsheetId: PLANNING_SPREADSHEET_ID }))
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-function getOrCreateSheet_(name) {
-  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+function getOrCreateSheet_(name, spreadsheetId) {
+  const targetId = spreadsheetId || PLANNING_SPREADSHEET_ID;
+  const spreadsheet = SpreadsheetApp.openById(targetId);
   return spreadsheet.getSheetByName(name) || spreadsheet.insertSheet(name);
 }
 

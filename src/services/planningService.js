@@ -99,6 +99,7 @@ export async function savePlanRecords(records) {
   const payloadRecords = records.map((record, index) => ({
     action: "upsert",
     id: record.id || `${record.type}-${createdAt}-${index + 1}`,
+    spreadsheetId: connection.spreadsheetId,
     tipoBase: record.type,
     data: record.date,
     turno: record.shift,
