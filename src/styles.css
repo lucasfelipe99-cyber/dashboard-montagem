@@ -104,6 +104,14 @@ p { color: var(--muted); }
 .planning-entry-table td:nth-child(5) { width: 110px; }
 .planning-entry-table input { width: 100%; }
 .planning-entry-table small { display: block; margin-top: 5px; color: var(--muted); font-size: 11px; font-weight: 800; line-height: 1.25; }
+.planning-stage-preview { margin-top: 8px; border: 1px solid #dce8f3; border-radius: 8px; background: #f8fbff; overflow: hidden; }
+.planning-stage-preview-summary { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 8px 10px; background: #eaf3fb; color: var(--ink); font-size: 11px; font-weight: 900; }
+.planning-stage-preview-summary strong { color: var(--primary-2); }
+.planning-stage-preview-list { display: grid; max-height: 190px; overflow: auto; }
+.planning-stage-preview-row { display: grid; grid-template-columns: minmax(150px, 1.8fr) repeat(4, minmax(72px, .7fr)); gap: 8px; align-items: center; padding: 7px 10px; border-top: 1px solid #e5eef7; font-size: 11px; font-weight: 800; color: var(--ink); }
+.planning-stage-preview-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.planning-stage-preview-row b { font-size: 11px; text-align: right; white-space: nowrap; }
+.planning-stage-preview-row small { grid-column: 1 / -1; margin: -2px 0 0; color: var(--muted); font-size: 10px; }
 .planning-kpis { grid-template-columns: repeat(4, minmax(170px, 1fr)); }
 .planning-kpis small { color: var(--muted); font-size: 12px; font-weight: 800; }
 .planning-kpis em { color: var(--muted); font-size: 12px; font-style: normal; font-weight: 700; line-height: 1.35; }

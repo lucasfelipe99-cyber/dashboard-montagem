@@ -224,6 +224,44 @@ function number(value) {
   return value.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
 }
 
+function decimal(value, digits = 2) {
+  return value.toLocaleString("pt-BR", { maximumFractionDigits: digits });
+}
+
+function productCutPreview(expansion, units) {
+  if (!expansion.items.length) return "";
+  const totalQuantity = expansion.items.reduce((sum, item) => sum + item.quantity, 0);
+  const totalStages = expansion.items.reduce((sum, item) => sum + item.stages, 0);
+  const totalSeconds = expansion.items.reduce((sum, item) => sum + (cutUnitForStructure(units, item.structure) * item.quantity), 0);
+  return `
+    <div class="planning-stage-preview">
+      <div class="planning-stage-preview-summary">
+        <strong>${number(expansion.items.length)} palco(s)</strong>
+        <span>${number(totalQuantity)} un. para cortar</span>
+        <span>${decimal(totalStages)} palco(s) estimado(s)</span>
+        <span>${secondsToDuration(totalSeconds)}</span>
+      </div>
+      <div class="planning-stage-preview-list">
+        ${expansion.items.map((item) => {
+          const unit = cutUnitForStructure(units, item.structure);
+          const total = unit * item.quantity;
+          const stageLabel = [item.structure.cutStageCode, item.structure.stage].filter(Boolean).join(" - ");
+          return `
+            <div class="planning-stage-preview-row">
+              <span title="${stageLabel}">${stageLabel}</span>
+              <b>${number(item.quantity)} un.</b>
+              <b>${decimal(item.stages)} palco(s)</b>
+              <b>${unit ? `${secondsToDuration(unit)} un.` : "Sem tempo"}</b>
+              <b>${total ? secondsToDuration(total) : "00:00:00"}</b>
+              ${item.productPath ? `<small>${item.productPath}</small>` : ""}
+            </div>
+          `;
+        }).join("")}
+      </div>
+    </div>
+  `;
+}
+
 function capacityCards(rows) {
   return `
     <section class="kpi-grid planning-kpis">
@@ -430,6 +468,7 @@ function planningItemRow() {
       <td>
         <input name="item" list="planning-products" placeholder="Produto pronto" required>
         <small data-theoretical-note>Escolha um produto pronto da estrutura.</small>
+        <div data-stage-preview></div>
       </td>
       <td><input type="number" min="0" step="1" name="quantity" required></td>
       <td><input name="theoreticalTotal" placeholder="Automatico" readonly required></td>
@@ -573,6 +612,11 @@ export function mountPlanning(records, planning, filters, onSave) {
         note.textContent = stageMode ? "Escolha um palco especifico da estrutura." : "Escolha um produto pronto da estrutura.";
       }
     });
+    if (stageMode || type !== "corte") {
+      formEl.querySelectorAll("[data-stage-preview]").forEach((preview) => {
+        preview.innerHTML = "";
+      });
+    }
   };
   const refreshPlanningTotals = () => {
     const rows = [...document.querySelectorAll(".planning-item-row")];
@@ -592,8 +636,10 @@ export function mountPlanning(records, planning, filters, onSave) {
     const itemInput = row.querySelector("[name='item']");
     const quantityInput = row.querySelector("[name='quantity']");
     const totalInput = row.querySelector("[name='theoreticalTotal']");
+    const preview = row.querySelector("[data-stage-preview]");
     const item = normalize(itemInput?.value);
     const quantity = Number(quantityInput?.value || 0);
+    if (preview) preview.innerHTML = "";
     if (type === "corte" && cutMode === "stage" && item && quantity) {
       const structure = structureForStageSelection(structures, item);
       const unit = structure ? cutUnitForStructure(units, structure) : 0;
@@ -627,6 +673,9 @@ export function mountPlanning(records, planning, filters, onSave) {
         } else {
           note.textContent = `${expansion.items.length} palco(s) de corte | ${stages.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} palco(s) estimado(s) | Total ${secondsToDuration(total)}`;
         }
+      }
+      if (preview && expansion.items.length) {
+        preview.innerHTML = productCutPreview(expansion, units);
       }
       refreshPlanningTotals();
       return;
