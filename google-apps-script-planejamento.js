@@ -17,6 +17,17 @@ const HEADERS = [
 
 function doPost(event) {
   const payload = JSON.parse(event.postData.contents || "{}");
+  const records = Array.isArray(payload.records) ? payload.records : [payload];
+  const saved = records
+    .filter((record) => record && record.tipoBase)
+    .map((record) => saveRecord_(record));
+
+  return ContentService
+    .createTextOutput(JSON.stringify({ ok: true, count: saved.length, ids: saved }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function saveRecord_(payload) {
   const sheetName = SHEETS[payload.tipoBase] || SHEETS.montagem;
   const sheet = getOrCreateSheet_(sheetName);
   ensureHeaders_(sheet);
@@ -43,9 +54,7 @@ function doPost(event) {
     sheet.appendRow(values);
   }
 
-  return ContentService
-    .createTextOutput(JSON.stringify({ ok: true, id }))
-    .setMimeType(ContentService.MimeType.JSON);
+  return id;
 }
 
 function doGet() {

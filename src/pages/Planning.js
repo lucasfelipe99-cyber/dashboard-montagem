@@ -1,6 +1,6 @@
 import { tableShell, renderTable } from "../components/DataTable.js";
 import { loadOperationalSettings } from "../services/settingsService.js";
-import { savePlanRecord } from "../services/planningService.js";
+import { savePlanRecords } from "../services/planningService.js";
 import { addDaysISO, parseTime, secondsToDuration, todayISO } from "../utils/dateUtils.js";
 import { safeDivide } from "../utils/calculations.js";
 
@@ -331,6 +331,30 @@ function createMachinePlan(items, units, machineCount = 14, productQuantity = 0)
   });
 
   return machines;
+}
+
+function machineTasksForSave(machinePlan) {
+  const grouped = new Map();
+  machinePlan.flatMap((machine) => machine.tasks).forEach((task) => {
+    const key = `${task.machine}|${structureKey(task.structure)}|${task.productPath || ""}`;
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        ...task,
+        quantity: 0,
+        stages: 0,
+        seconds: 0,
+        startSeconds: task.startSeconds,
+        endSeconds: task.endSeconds
+      });
+    }
+    const current = grouped.get(key);
+    current.quantity += task.quantity;
+    current.stages += task.stages;
+    current.seconds += task.seconds;
+    current.startSeconds = Math.min(current.startSeconds, task.startSeconds);
+    current.endSeconds = Math.max(current.endSeconds, task.endSeconds);
+  });
+  return [...grouped.values()].sort((a, b) => a.machine - b.machine || a.startSeconds - b.startSeconds);
 }
 
 function machineHourlyRows(machine, startSeconds) {
@@ -980,6 +1004,8 @@ export function mountPlanning(records, planning, filters, onSave) {
 
   formEl?.addEventListener("submit", async (event) => {
     event.preventDefault();
+    const submitButton = event.currentTarget.querySelector("button[type='submit']");
+    if (submitButton?.disabled) return;
     const form = new FormData(event.currentTarget);
     const units = decodePayload(event.currentTarget.dataset.theoreticalUnits, {});
     const structures = decodePayload(event.currentTarget.dataset.productStructures, []);
@@ -1017,8 +1043,7 @@ export function mountPlanning(records, planning, filters, onSave) {
           issues.push(`${row.item}: sem tempo teorico`);
           return;
         }
-        createMachinePlan([{ structure, quantity: row.quantity, stages: structure.piecesPerStage ? row.quantity / Number(structure.piecesPerStage) : 0, productPath: "" }], units, machineCount)
-          .flatMap((machine) => machine.tasks)
+        machineTasksForSave(createMachinePlan([{ structure, quantity: row.quantity, stages: structure.piecesPerStage ? row.quantity / Number(structure.piecesPerStage) : 0, productPath: "" }], units, machineCount))
           .forEach((task) => {
             machineRows.push({
               item: normalize(structure.stage),
@@ -1052,7 +1077,7 @@ export function mountPlanning(records, planning, filters, onSave) {
           issues.push(`${row.item} > ${missingUnit.structure.cutStageCode || missingUnit.structure.stage}: sem tempo teorico`);
           return;
         }
-        createMachinePlan(expansion.items, units, machineCount, row.quantity).flatMap((machine) => machine.tasks).forEach((task) => {
+        machineTasksForSave(createMachinePlan(expansion.items, units, machineCount, row.quantity)).forEach((task) => {
           const structure = task.structure;
           const stagesText = task.stages
             ? `${task.stages.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} palco(s)`
@@ -1081,21 +1106,29 @@ export function mountPlanning(records, planning, filters, onSave) {
       rowsToSave = expandedRows;
     }
     try {
-      for (const row of rowsToSave) {
-        await savePlanRecord({
-          type: baseType,
-          date: form.get("date"),
-          shift: form.get("shift"),
-          item: row.item,
-          quantity: row.quantity,
-          theoreticalTotalSeconds: row.theoreticalTotalSeconds,
-          observation: row.observation
-        });
+      if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.innerHTML = "Enviando...";
       }
+      await savePlanRecords(rowsToSave.map((row) => ({
+        type: baseType,
+        date: form.get("date"),
+        shift: form.get("shift"),
+        item: row.item,
+        quantity: row.quantity,
+        theoreticalTotalSeconds: row.theoreticalTotalSeconds,
+        observation: row.observation
+      })));
       alert(`${rowsToSave.length} lancamento(s) enviado(s) para o Google Sheets. A tela sera atualizada.`);
       onSave?.();
     } catch (error) {
-      alert(error.message);
+      alert(error.message || "Nao foi possivel salvar o plano.");
+    } finally {
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.innerHTML = `<i data-lucide="save"></i> Salvar lancamentos no Sheets`;
+        window.lucide?.createIcons?.();
+      }
     }
   });
 }

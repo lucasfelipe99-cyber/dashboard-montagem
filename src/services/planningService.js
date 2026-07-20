@@ -86,14 +86,19 @@ export async function loadPlanningDataset() {
 }
 
 export async function savePlanRecord(record) {
+  return savePlanRecords([record]).then((records) => records[0]);
+}
+
+export async function savePlanRecords(records) {
   const connection = getPlanningConnectionSettings();
   if (!connection.scriptUrl) {
     throw new Error("Configure a URL do Apps Script em Configuracoes para salvar no Google Sheets.");
   }
 
-  const payload = {
+  const createdAt = Date.now();
+  const payloadRecords = records.map((record, index) => ({
     action: "upsert",
-    id: record.id || `${record.type}-${Date.now()}`,
+    id: record.id || `${record.type}-${createdAt}-${index + 1}`,
     tipoBase: record.type,
     data: record.date,
     turno: record.shift,
@@ -105,14 +110,16 @@ export async function savePlanRecord(record) {
         : parseTime(record.theoreticalTotalSeconds) || 0
     ),
     observacao: record.observation || ""
-  };
+  }));
 
-  await fetch(connection.scriptUrl, {
-    method: "POST",
-    mode: "no-cors",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify(payload)
-  });
+  for (const payload of payloadRecords) {
+    await fetch(connection.scriptUrl, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(payload)
+    });
+  }
 
-  return payload;
+  return payloadRecords;
 }
