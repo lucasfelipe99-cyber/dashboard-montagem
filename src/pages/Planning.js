@@ -248,6 +248,23 @@ function splitQuantity(quantity, parts) {
   return Array.from({ length: count }, (_, index) => base + (index < remainder ? 1 : 0)).filter(Boolean);
 }
 
+function splitTaskQuantity(quantity, unitSeconds, maxSeconds = 3600) {
+  const total = Math.max(0, Number(quantity) || 0);
+  const unit = Math.max(0, Number(unitSeconds) || 0);
+  if (!total || !unit) return [];
+  const maxQuantity = Math.max(maxSeconds / unit, 0.0001);
+  const wholeQuantity = Math.abs(total - Math.round(total)) < 0.0001;
+  const chunks = [];
+  let remaining = total;
+  while (remaining > 0.0001 && chunks.length < 10000) {
+    let chunk = Math.min(remaining, maxQuantity);
+    if (wholeQuantity && maxQuantity >= 1) chunk = Math.min(remaining, Math.max(1, Math.floor(maxQuantity)));
+    chunks.push(chunk);
+    remaining -= chunk;
+  }
+  return chunks;
+}
+
 function createMachinePlan(items, units, machineCount = 14) {
   const machines = Array.from({ length: Math.max(1, Number(machineCount) || 14) }, (_, index) => ({
     machine: index + 1,
@@ -255,7 +272,7 @@ function createMachinePlan(items, units, machineCount = 14) {
     quantity: 0,
     tasks: []
   }));
-  const tasks = items
+  const taskDefinitions = items
     .map((item) => {
       const unit = cutUnitForStructure(units, item.structure);
       return {
@@ -266,24 +283,34 @@ function createMachinePlan(items, units, machineCount = 14) {
     })
     .filter((item) => item.unit && item.quantity > 0)
     .sort((a, b) => b.totalSeconds - a.totalSeconds);
+  const totalSeconds = taskDefinitions.reduce((sum, item) => sum + item.totalSeconds, 0);
+  const waveCount = Math.max(1, Math.ceil(totalSeconds / (machines.length * 3600)));
+  const waveQuantities = taskDefinitions.map((item) => ({
+    ...item,
+    quantities: splitQuantity(item.quantity, waveCount)
+  }));
 
-  tasks.forEach((item) => {
-    splitQuantity(item.quantity, machines.length).forEach((quantity) => {
-      const machine = machines.reduce((best, current) => current.seconds < best.seconds ? current : best, machines[0]);
-      const seconds = item.unit * quantity;
-      const stages = item.structure.piecesPerStage ? quantity / Number(item.structure.piecesPerStage) : 0;
-      const task = {
-        machine: machine.machine,
-        structure: item.structure,
-        productPath: item.productPath,
-        quantity,
-        stages,
-        unit: item.unit,
-        seconds
-      };
-      machine.tasks.push(task);
-      machine.seconds += seconds;
-      machine.quantity += quantity;
+  Array.from({ length: waveCount }).forEach((_, waveIndex) => {
+    waveQuantities.forEach((item) => {
+      const waveQuantity = item.quantities[waveIndex] || 0;
+      splitTaskQuantity(waveQuantity, item.unit).forEach((quantity) => {
+        const machine = machines.reduce((best, current) => current.seconds < best.seconds ? current : best, machines[0]);
+        const seconds = item.unit * quantity;
+        const stages = item.structure.piecesPerStage ? quantity / Number(item.structure.piecesPerStage) : 0;
+        const task = {
+          machine: machine.machine,
+          structure: item.structure,
+          productPath: item.productPath,
+          quantity,
+          stages,
+          unit: item.unit,
+          seconds,
+          wave: waveIndex + 1
+        };
+        machine.tasks.push(task);
+        machine.seconds += seconds;
+        machine.quantity += quantity;
+      });
     });
   });
 
@@ -325,7 +352,68 @@ function machineHourlyRows(machine, startSeconds) {
   }).join("") || `<div class="planning-machine-hour is-empty"><b>${formatClock(startSeconds)}</b><span>Livre</span><small>${secondsToDuration(availableSeconds)} disponivel</small></div>`;
 }
 
-function productCutPreview(expansion, units, machineCount = 14, shift = "1") {
+function structureKey(structure) {
+  return `${normalize(structure.cutStageCode)}|${normalize(structure.stage)}`;
+}
+
+function hourlyProductOutput(machinePlan, expansion, startSeconds, productQuantity) {
+  if (!productQuantity) return "";
+  const requirements = new Map();
+  expansion.items.forEach((item) => {
+    const key = structureKey(item.structure);
+    const current = requirements.get(key) || {
+      label: [item.structure.cutStageCode, item.structure.stage].filter(Boolean).join(" - "),
+      perProduct: 0
+    };
+    current.perProduct += item.quantity / productQuantity;
+    requirements.set(key, current);
+  });
+  const maxSeconds = machinePlan.reduce((max, machine) => Math.max(max, machine.seconds), 0);
+  const bucketCount = Math.max(1, Math.min(24, Math.ceil(maxSeconds / 3600)));
+  const rows = Array.from({ length: bucketCount }, (_, hour) => {
+    const bucketStart = hour * 3600;
+    const bucketEnd = bucketStart + 3600;
+    const produced = new Map();
+    let usedSeconds = 0;
+    machinePlan.forEach((machine) => {
+      machine.tasks.forEach((task) => {
+        const overlap = Math.max(0, Math.min(task.endSeconds, bucketEnd) - Math.max(task.startSeconds, bucketStart));
+        if (!overlap) return;
+        const quantity = task.seconds ? task.quantity * (overlap / task.seconds) : 0;
+        const key = structureKey(task.structure);
+        produced.set(key, (produced.get(key) || 0) + quantity);
+        usedSeconds += overlap;
+      });
+    });
+    const productUnits = [...requirements.entries()].reduce((min, [key, requirement]) => {
+      const equivalent = requirement.perProduct ? (produced.get(key) || 0) / requirement.perProduct : 0;
+      return Math.min(min, equivalent);
+    }, Number.POSITIVE_INFINITY);
+    const stageSummary = [...produced.entries()]
+      .map(([key, quantity]) => `${requirements.get(key)?.label || key}: ${decimal(quantity, quantity < 1 ? 2 : 0)} un.`)
+      .slice(0, 5)
+      .join(" | ");
+    return `
+      <div class="planning-hourly-output-row">
+        <b>${formatClock(startSeconds + bucketStart)}-${formatClock(startSeconds + bucketEnd)}</b>
+        <strong>${decimal(Number.isFinite(productUnits) ? productUnits : 0, productUnits < 10 ? 1 : 0)} produto(s)</strong>
+        <span>${stageSummary || "Sem corte previsto"}</span>
+        <small>${secondsToDuration(usedSeconds)} de maquina usado(s)</small>
+      </div>
+    `;
+  }).join("");
+  return `
+    <div class="planning-hourly-output">
+      <div class="planning-hourly-output-title">
+        <strong>Produtos liberados para montagem por hora</strong>
+        <span>Calculado pelo menor volume entre os palcos necessarios em cada hora</span>
+      </div>
+      <div class="planning-hourly-output-list">${rows}</div>
+    </div>
+  `;
+}
+
+function productCutPreview(expansion, units, machineCount = 14, shift = "1", productQuantity = 0) {
   if (!expansion.items.length) return "";
   const startSeconds = SHIFT_START_SECONDS[normalizeShiftValue(shift)] ?? SHIFT_START_SECONDS["1"];
   const availableSeconds = 24 * 3600;
@@ -337,12 +425,19 @@ function productCutPreview(expansion, units, machineCount = 14, shift = "1") {
   return `
     <div class="planning-stage-preview">
       <div class="planning-stage-preview-summary">
-        <strong>${number(expansion.items.length)} palco(s)</strong>
-        <span>${number(totalQuantity)} un. para cortar</span>
-        <span>${decimal(totalStages)} palco(s) estimado(s)</span>
-        <span>${secondsToDuration(totalSeconds)}</span>
+        <span><b>${number(expansion.items.length)}</b> palco(s)</span>
+        <span><b>${number(totalQuantity)}</b> un. para cortar</span>
+        <span><b>${decimal(totalStages)}</b> palco(s) estimado(s)</span>
+        <span><b>${secondsToDuration(totalSeconds)}</b> tempo total</span>
       </div>
       <div class="planning-stage-preview-list">
+        <div class="planning-stage-preview-row is-header">
+          <span>Palco</span>
+          <b>Unidades</b>
+          <b>Palcos</b>
+          <b>Tempo un.</b>
+          <b>Total</b>
+        </div>
         ${expansion.items.map((item) => {
           const unit = cutUnitForStructure(units, item.structure);
           const total = unit * item.quantity;
@@ -363,8 +458,9 @@ function productCutPreview(expansion, units, machineCount = 14, shift = "1") {
         <div class="planning-machine-preview">
           <div class="planning-machine-preview-title">
             <strong>Plano sugerido nas ${number(machinePlan.length)} maquinas</strong>
-            <span>${number(activeMachines.length)} maquina(s) com demanda | balanceado por menor carga acumulada</span>
+            <span>${number(activeMachines.length)} maquina(s) com demanda | palcos misturados por ondas horarias</span>
           </div>
+          ${hourlyProductOutput(machinePlan, expansion, startSeconds, productQuantity)}
           <div class="planning-machine-grid">
             ${machinePlan.map((machine) => `
               <div class="planning-machine-card ${machine.tasks.length ? "" : "is-empty"}">
@@ -600,12 +696,14 @@ function planningItemRow() {
       <td>
         <input name="item" list="planning-products" placeholder="Produto pronto" required>
         <small data-theoretical-note>Escolha um produto pronto da estrutura.</small>
-        <div data-stage-preview></div>
       </td>
       <td><input type="number" min="0" step="1" name="quantity" required></td>
       <td><input name="theoreticalTotal" placeholder="Automatico" readonly required></td>
       <td><input name="observation" placeholder="Opcional"></td>
       <td><button class="button" type="button" data-action="remove-plan-row">Remover</button></td>
+    </tr>
+    <tr class="planning-preview-row">
+      <td colspan="5"><div data-stage-preview></div></td>
     </tr>
   `;
 }
@@ -733,6 +831,9 @@ export function mountPlanning(records, planning, filters, onSave) {
   ], { height: "340px" });
 
   const formEl = document.querySelector("#planning-form");
+  const previewForRow = (row) => row?.nextElementSibling?.classList.contains("planning-preview-row")
+    ? row.nextElementSibling.querySelector("[data-stage-preview]")
+    : null;
   const refreshItemMode = () => {
     if (!formEl) return;
     const type = formEl.elements.type.value;
@@ -774,7 +875,7 @@ export function mountPlanning(records, planning, filters, onSave) {
     const itemInput = row.querySelector("[name='item']");
     const quantityInput = row.querySelector("[name='quantity']");
     const totalInput = row.querySelector("[name='theoreticalTotal']");
-    const preview = row.querySelector("[data-stage-preview]");
+    const preview = previewForRow(row);
     const item = normalize(itemInput?.value);
     const quantity = Number(quantityInput?.value || 0);
     if (preview) preview.innerHTML = "";
@@ -816,7 +917,7 @@ export function mountPlanning(records, planning, filters, onSave) {
         }
       }
       if (preview && expansion.items.length) {
-        preview.innerHTML = productCutPreview(expansion, units, machineCount, shift);
+        preview.innerHTML = productCutPreview(expansion, units, machineCount, shift, quantity);
       }
       refreshPlanningTotals();
       return;
@@ -852,10 +953,15 @@ export function mountPlanning(records, planning, filters, onSave) {
     const rows = [...formEl.querySelectorAll(".planning-item-row")];
     if (rows.length === 1) {
       rows[0].querySelectorAll("input").forEach((input) => { input.value = ""; });
+      const preview = previewForRow(rows[0]);
+      if (preview) preview.innerHTML = "";
       refreshTheoreticalTotal(rows[0]);
       return;
     }
-    button.closest(".planning-item-row")?.remove();
+    const row = button.closest(".planning-item-row");
+    const previewRow = row?.nextElementSibling;
+    row?.remove();
+    if (previewRow?.classList.contains("planning-preview-row")) previewRow.remove();
     refreshPlanningTotals();
   });
   formEl?.querySelector("[data-action='add-plan-row']")?.addEventListener("click", () => {

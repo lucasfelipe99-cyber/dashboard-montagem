@@ -104,29 +104,42 @@ p { color: var(--muted); }
 .planning-entry-table td:nth-child(5) { width: 110px; }
 .planning-entry-table input { width: 100%; }
 .planning-entry-table small { display: block; margin-top: 5px; color: var(--muted); font-size: 11px; font-weight: 800; line-height: 1.25; }
-.planning-stage-preview { margin-top: 8px; border: 1px solid #dce8f3; border-radius: 8px; background: #f8fbff; overflow: hidden; }
-.planning-stage-preview-summary { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 8px 10px; background: #eaf3fb; color: var(--ink); font-size: 11px; font-weight: 900; }
-.planning-stage-preview-summary strong { color: var(--primary-2); }
-.planning-stage-preview-list { display: grid; max-height: 190px; overflow: auto; }
-.planning-stage-preview-row { display: grid; grid-template-columns: minmax(150px, 1.8fr) repeat(4, minmax(72px, .7fr)); gap: 8px; align-items: center; padding: 7px 10px; border-top: 1px solid #e5eef7; font-size: 11px; font-weight: 800; color: var(--ink); }
+.planning-preview-row td { padding: 0 8px 14px; background: #fbfdff; }
+.planning-stage-preview { margin-top: 0; border: 1px solid #dce8f3; border-radius: 8px; background: #f8fbff; overflow: hidden; box-shadow: inset 0 1px 0 rgba(255,255,255,.8); }
+.planning-stage-preview-summary { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 8px; padding: 10px; background: #eaf3fb; color: var(--ink); font-size: 12px; font-weight: 900; }
+.planning-stage-preview-summary span { display: grid; gap: 2px; padding: 8px 10px; border: 1px solid #d4e4f1; border-radius: 7px; background: #fff; }
+.planning-stage-preview-summary b { color: var(--primary-2); font-size: 15px; }
+.planning-stage-preview-list { display: grid; overflow: auto; }
+.planning-stage-preview-row { display: grid; grid-template-columns: minmax(260px, 2fr) repeat(4, minmax(110px, .8fr)); gap: 12px; align-items: center; padding: 9px 12px; border-top: 1px solid #e5eef7; font-size: 12px; font-weight: 800; color: var(--ink); }
+.planning-stage-preview-row.is-header { position: sticky; top: 0; z-index: 1; background: #f0f6fc; color: var(--muted); text-transform: uppercase; font-size: 10px; letter-spacing: 0; }
 .planning-stage-preview-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.planning-stage-preview-row b { font-size: 11px; text-align: right; white-space: nowrap; }
-.planning-stage-preview-row small { grid-column: 1 / -1; margin: -2px 0 0; color: var(--muted); font-size: 10px; }
-.planning-machine-preview { border-top: 1px solid #dce8f3; padding: 9px 10px 10px; display: grid; gap: 8px; }
-.planning-machine-preview-title { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; flex-wrap: wrap; font-size: 11px; font-weight: 900; }
+.planning-stage-preview-row b { font-size: 12px; text-align: right; white-space: nowrap; }
+.planning-stage-preview-row small { grid-column: 1 / -1; margin: -3px 0 0; color: var(--muted); font-size: 10px; }
+.planning-machine-preview { border-top: 1px solid #dce8f3; padding: 12px; display: grid; gap: 10px; }
+.planning-machine-preview-title { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; flex-wrap: wrap; font-size: 13px; font-weight: 900; }
 .planning-machine-preview-title span { color: var(--muted); }
-.planning-machine-grid { display: grid; grid-template-columns: repeat(2, minmax(260px, 1fr)); gap: 8px; max-height: 520px; overflow: auto; padding-right: 2px; }
-.planning-machine-card { border: 1px solid #d8e5f1; border-radius: 7px; background: #fff; padding: 8px; display: grid; gap: 5px; min-height: 78px; }
+.planning-hourly-output { display: grid; gap: 8px; border: 1px solid #d8e5f1; border-radius: 8px; background: #fff; padding: 10px; }
+.planning-hourly-output-title { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+.planning-hourly-output-title strong { color: var(--ink); font-size: 13px; }
+.planning-hourly-output-title span { color: var(--muted); font-size: 11px; font-weight: 800; }
+.planning-hourly-output-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 6px; max-height: 260px; overflow: auto; }
+.planning-hourly-output-row { display: grid; grid-template-columns: 92px 112px minmax(0, 1fr) 150px; gap: 8px; align-items: center; padding: 7px 8px; border: 1px solid #edf2f7; border-radius: 6px; background: #fbfdff; }
+.planning-hourly-output-row b { font-size: 11px; white-space: nowrap; }
+.planning-hourly-output-row strong { color: var(--primary-2); font-size: 12px; white-space: nowrap; }
+.planning-hourly-output-row span { color: var(--ink); font-size: 11px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.planning-hourly-output-row small { color: var(--muted); font-size: 10px; font-weight: 800; justify-self: end; white-space: nowrap; }
+.planning-machine-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(430px, 1fr)); gap: 12px; }
+.planning-machine-card { border: 1px solid #d8e5f1; border-radius: 8px; background: #fff; padding: 12px; display: grid; gap: 7px; min-height: 78px; }
 .planning-machine-card.is-empty { opacity: .5; background: #f4f7fb; }
-.planning-machine-card strong { color: var(--primary-2); font-size: 11px; }
-.planning-machine-card span { color: var(--ink); font-size: 12px; font-weight: 900; }
-.planning-machine-card small, .planning-machine-card em { color: var(--muted); font-size: 10px; font-style: normal; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.planning-machine-hours { display: grid; gap: 4px; max-height: 188px; overflow: auto; padding-top: 3px; }
-.planning-machine-hour { display: grid; grid-template-columns: 78px minmax(0, 1fr); gap: 6px; align-items: start; padding: 5px 6px; border: 1px solid #edf2f7; border-radius: 6px; background: #fbfdff; }
+.planning-machine-card strong { color: var(--primary-2); font-size: 13px; }
+.planning-machine-card span { color: var(--ink); font-size: 15px; font-weight: 900; }
+.planning-machine-card small, .planning-machine-card em { color: var(--muted); font-size: 11px; font-style: normal; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.planning-machine-hours { display: grid; gap: 5px; max-height: 260px; overflow: auto; padding-top: 4px; }
+.planning-machine-hour { display: grid; grid-template-columns: 92px minmax(0, 1.5fr) 190px; gap: 8px; align-items: center; padding: 7px 8px; border: 1px solid #edf2f7; border-radius: 6px; background: #fbfdff; }
 .planning-machine-hour.is-empty { background: #f6f8fb; }
-.planning-machine-hour b { color: var(--ink); font-size: 10px; white-space: nowrap; }
-.planning-machine-hour span { color: var(--ink); font-size: 10px; font-weight: 800; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; }
-.planning-machine-hour small { grid-column: 2; font-size: 10px; }
+.planning-machine-hour b { color: var(--ink); font-size: 11px; white-space: nowrap; }
+.planning-machine-hour span { color: var(--ink); font-size: 11px; font-weight: 800; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.planning-machine-hour small { justify-self: end; font-size: 10px; }
 .planning-kpis { grid-template-columns: repeat(4, minmax(170px, 1fr)); }
 .planning-kpis small { color: var(--muted); font-size: 12px; font-weight: 800; }
 .planning-kpis em { color: var(--muted); font-size: 12px; font-style: normal; font-weight: 700; line-height: 1.35; }
@@ -244,6 +257,9 @@ p { color: var(--muted); }
   .insight-grid { grid-template-columns: repeat(2, 1fr); }
   .connection-grid { grid-template-columns: repeat(2, 1fr); }
   .planning-form-head, .planning-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .planning-machine-grid, .planning-hourly-output-list { grid-template-columns: 1fr; }
+  .planning-hourly-output-row { grid-template-columns: 90px 110px minmax(0, 1fr); }
+  .planning-hourly-output-row small { grid-column: 3; justify-self: start; }
 }
 
 @media (max-width: 760px) {
@@ -259,6 +275,8 @@ p { color: var(--muted); }
   .employee-summary-panel, .employee-summary-panel .mini-kpis { grid-template-columns: 1fr; }
   .connection-grid { grid-template-columns: 1fr; }
   .planning-form-head, .planning-kpis, .planning-bar-row { grid-template-columns: 1fr; }
+  .planning-stage-preview-summary, .planning-stage-preview-row, .planning-machine-hour, .planning-hourly-output-row { grid-template-columns: 1fr; }
+  .planning-stage-preview-row b, .planning-machine-hour small, .planning-hourly-output-row small { text-align: left; justify-self: start; }
   .capacity-group-header, .capacity-lane { grid-template-columns: 1fr; display: grid; }
   .capacity-group-header span, .capacity-lane-value { text-align: left; justify-items: start; }
   .content { padding: 12px; }
