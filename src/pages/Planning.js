@@ -364,7 +364,7 @@ function createMachinePlan(items, units, machineCount = 14, productQuantity = 0)
   return machines;
 }
 
-function splitTaskIntoCalendarDays(task, startOffset = 0) {
+function splitTaskIntoCalendarDays(task, startDate, startOffset = 0) {
   if (!task.seconds) return [];
   const segments = [];
   let cursor = startOffset + task.startSeconds;
@@ -378,6 +378,7 @@ function splitTaskIntoCalendarDays(task, startOffset = 0) {
     segments.push({
       ...task,
       dayIndex,
+      date: dateForPlanSeconds(startDate, cursor),
       seconds,
       quantity: task.quantity * ratio,
       stages: task.stages * ratio,
@@ -389,13 +390,32 @@ function splitTaskIntoCalendarDays(task, startOffset = 0) {
   return segments;
 }
 
-function machineTasksForSave(machinePlan, startOffset = 0) {
+function capSavedTaskToDay(task) {
+  if (task.seconds <= 24 * 3600) return [task];
+  const parts = Math.ceil(task.seconds / (24 * 3600));
+  return Array.from({ length: parts }, (_, index) => {
+    const seconds = Math.min(24 * 3600, task.seconds - index * 24 * 3600);
+    const ratio = seconds / task.seconds;
+    const startSeconds = task.startSeconds + index * 24 * 3600;
+    return {
+      ...task,
+      date: dateForPlanSeconds(task.date, index),
+      seconds,
+      quantity: task.quantity * ratio,
+      stages: task.stages * ratio,
+      startSeconds,
+      endSeconds: startSeconds + seconds
+    };
+  });
+}
+
+function machineTasksForSave(machinePlan, startDate, startOffset = 0) {
   const grouped = new Map();
   machinePlan
     .flatMap((machine) => machine.tasks)
-    .flatMap((task) => splitTaskIntoCalendarDays(task, startOffset))
+    .flatMap((task) => splitTaskIntoCalendarDays(task, startDate, startOffset))
     .forEach((task) => {
-    const key = `${task.dayIndex}|${task.machine}|${structureKey(task.structure)}|${task.productPath || ""}`;
+    const key = `${task.date}|${task.machine}|${structureKey(task.structure)}|${task.productPath || ""}`;
     if (!grouped.has(key)) {
       grouped.set(key, {
         ...task,
@@ -413,7 +433,9 @@ function machineTasksForSave(machinePlan, startOffset = 0) {
     current.startSeconds = Math.min(current.startSeconds, task.startSeconds);
     current.endSeconds = Math.max(current.endSeconds, task.endSeconds);
   });
-  return [...grouped.values()].sort((a, b) => a.startSeconds - b.startSeconds || a.machine - b.machine);
+  return [...grouped.values()]
+    .flatMap(capSavedTaskToDay)
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.machine - b.machine || a.startSeconds - b.startSeconds);
 }
 
 function machineHourlyRows(machine, startDate, startSeconds) {
@@ -1112,11 +1134,11 @@ export function mountPlanning(records, planning, filters, onSave) {
           issues.push(`${row.item}: sem tempo teorico`);
           return;
         }
-        machineTasksForSave(createMachinePlan([{ structure, quantity: row.quantity, stages: structure.piecesPerStage ? row.quantity / Number(structure.piecesPerStage) : 0, productPath: "" }], units, machineCount), scheduleStart)
+        machineTasksForSave(createMachinePlan([{ structure, quantity: row.quantity, stages: structure.piecesPerStage ? row.quantity / Number(structure.piecesPerStage) : 0, productPath: "" }], units, machineCount), start.date, scheduleStart)
           .forEach((task) => {
             machineRows.push({
               item: normalize(structure.stage),
-              date: dateForPlanSeconds(start.date, scheduleStart + task.startSeconds),
+              date: task.date,
               machine: task.machine,
               quantity: task.quantity,
               theoreticalTotalSeconds: task.seconds,
@@ -1148,14 +1170,14 @@ export function mountPlanning(records, planning, filters, onSave) {
           issues.push(`${row.item} > ${missingUnit.structure.cutStageCode || missingUnit.structure.stage}: sem tempo teorico`);
           return;
         }
-        machineTasksForSave(createMachinePlan(expansion.items, units, machineCount, row.quantity), scheduleStart).forEach((task) => {
+        machineTasksForSave(createMachinePlan(expansion.items, units, machineCount, row.quantity), start.date, scheduleStart).forEach((task) => {
           const structure = task.structure;
           const stagesText = task.stages
             ? `${task.stages.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} palco(s)`
             : "palcos sem capacidade cadastrada";
           expandedRows.push({
             item: normalize(structure.stage),
-            date: dateForPlanSeconds(start.date, scheduleStart + task.startSeconds),
+            date: task.date,
             machine: task.machine,
             quantity: task.quantity,
             theoreticalTotalSeconds: task.seconds,
