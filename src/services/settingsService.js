@@ -60,12 +60,13 @@ function normalizeSchedule(item) {
 
 function normalizeProductStructure(item) {
   const kind = clean(item.structureKind) === "compound" ? "compound" : "stage";
+  const unitsPerProduct = Number(item.unitsPerProduct || 0) || 1;
   return {
     product: clean(item.product).toUpperCase(),
     stage: clean(item.stage).toUpperCase(),
     structureKind: kind,
     piecesPerStage: Number(item.piecesPerStage || 0),
-    unitsPerProduct: Number(item.unitsPerProduct || 0),
+    unitsPerProduct,
     cutStageCode: clean(item.cutStageCode).toUpperCase(),
     cutBatchTime: formatSettingTime(item.cutBatchTime) || clean(item.cutBatchTime),
     cutUnitTime: formatSettingTime(item.cutUnitTime) || clean(item.cutUnitTime),
@@ -78,7 +79,7 @@ function productStructureKey(item) {
 }
 
 function mergeDefaultProductStructures(savedStructures = []) {
-  const saved = savedStructures.map(normalizeProductStructure).filter((item) => item.product && item.stage && item.unitsPerProduct > 0);
+  const saved = savedStructures.map(normalizeProductStructure).filter((item) => item.product && item.stage);
   const map = new Map(DEFAULT_PRODUCT_STRUCTURES.map((item) => {
     const normalized = normalizeProductStructure(item);
     return [productStructureKey(normalized), normalized];

@@ -337,6 +337,13 @@ function structuresForProduct(structures, product) {
   return structures.filter((item) => normalize(item.product) === productKey && Number(item.unitsPerProduct) > 0);
 }
 
+function planningProductOptions(structures) {
+  return unique([
+    ...structures.map((item) => item.product),
+    ...structures.filter((item) => !isCompoundStructure(item)).map((item) => item.stage)
+  ]);
+}
+
 function isCompoundStructure(item) {
   return item?.structureKind === "compound" || normalize(item?.cutStageCode) === "PRODUTO";
 }
@@ -388,7 +395,11 @@ function expandProductToCutItems(structures, product, productQuantity, trail = [
   if (trail.includes(productKey)) {
     return { items: [], issues: [`${product}: estrutura circular`] };
   }
-  const matches = structuresForProduct(structures, product);
+  let matches = structuresForProduct(structures, product);
+  if (!matches.length) {
+    const directStage = structureForStageSelection(structures, product);
+    if (directStage) matches = [{ ...directStage, unitsPerProduct: directStage.unitsPerProduct || 1 }];
+  }
   if (!matches.length) {
     return { items: [], issues: [`${product}: sem estrutura cadastrada`] };
   }
@@ -481,7 +492,7 @@ function planningItemRow() {
 function planForm(records, plans, filters) {
   const settings = loadOperationalSettings();
   const structures = settings.productStructures || [];
-  const products = unique(structures.map((item) => item.product));
+  const products = planningProductOptions(structures);
   const stages = unique(structures.filter((item) => !isCompoundStructure(item)).map(stageOption));
   const unitsPayload = encodeURIComponent(JSON.stringify(theoreticalUnits(records)));
   const structuresPayload = encodeURIComponent(JSON.stringify(structures));

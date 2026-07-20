@@ -112,7 +112,7 @@ function simpleStructureRow() {
       <td><input data-setting="product" list="structure-product-options" placeholder="Produto pronto"></td>
       <td><input data-setting="stage" list="structure-stage-options" placeholder="Palco / item de corte"></td>
       <td><input data-setting="cutStageCode" placeholder="P17"></td>
-      <td><input type="number" min="0" step="0.01" data-setting="unitsPerProduct" placeholder="1"></td>
+      <td><input type="number" min="0" step="0.01" value="1" data-setting="unitsPerProduct" placeholder="1"></td>
       <td><input type="number" min="0" step="0.01" data-setting="piecesPerStage" placeholder="88"></td>
       <td><input data-setting="cutUnitTime" placeholder="00:00:47"></td>
       <td><input data-setting="cutBatchTime" placeholder="00:38:44"></td>
