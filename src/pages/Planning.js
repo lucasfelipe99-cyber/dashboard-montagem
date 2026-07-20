@@ -364,10 +364,38 @@ function createMachinePlan(items, units, machineCount = 14, productQuantity = 0)
   return machines;
 }
 
-function machineTasksForSave(machinePlan) {
+function splitTaskIntoCalendarDays(task, startOffset = 0) {
+  if (!task.seconds) return [];
+  const segments = [];
+  let cursor = startOffset + task.startSeconds;
+  const absoluteEnd = startOffset + task.endSeconds;
+  while (cursor < absoluteEnd && segments.length < 370) {
+    const dayIndex = Math.floor(cursor / (24 * 3600));
+    const dayEnd = (dayIndex + 1) * 24 * 3600;
+    const next = Math.min(absoluteEnd, dayEnd);
+    const seconds = Math.max(0, next - cursor);
+    const ratio = seconds / task.seconds;
+    segments.push({
+      ...task,
+      dayIndex,
+      seconds,
+      quantity: task.quantity * ratio,
+      stages: task.stages * ratio,
+      startSeconds: cursor - startOffset,
+      endSeconds: next - startOffset
+    });
+    cursor = next;
+  }
+  return segments;
+}
+
+function machineTasksForSave(machinePlan, startOffset = 0) {
   const grouped = new Map();
-  machinePlan.flatMap((machine) => machine.tasks).forEach((task) => {
-    const key = `${task.machine}|${structureKey(task.structure)}|${task.productPath || ""}`;
+  machinePlan
+    .flatMap((machine) => machine.tasks)
+    .flatMap((task) => splitTaskIntoCalendarDays(task, startOffset))
+    .forEach((task) => {
+    const key = `${task.dayIndex}|${task.machine}|${structureKey(task.structure)}|${task.productPath || ""}`;
     if (!grouped.has(key)) {
       grouped.set(key, {
         ...task,
@@ -385,7 +413,7 @@ function machineTasksForSave(machinePlan) {
     current.startSeconds = Math.min(current.startSeconds, task.startSeconds);
     current.endSeconds = Math.max(current.endSeconds, task.endSeconds);
   });
-  return [...grouped.values()].sort((a, b) => a.machine - b.machine || a.startSeconds - b.startSeconds);
+  return [...grouped.values()].sort((a, b) => a.startSeconds - b.startSeconds || a.machine - b.machine);
 }
 
 function machineHourlyRows(machine, startDate, startSeconds) {
@@ -1079,7 +1107,7 @@ export function mountPlanning(records, planning, filters, onSave) {
           issues.push(`${row.item}: sem tempo teorico`);
           return;
         }
-        machineTasksForSave(createMachinePlan([{ structure, quantity: row.quantity, stages: structure.piecesPerStage ? row.quantity / Number(structure.piecesPerStage) : 0, productPath: "" }], units, machineCount))
+        machineTasksForSave(createMachinePlan([{ structure, quantity: row.quantity, stages: structure.piecesPerStage ? row.quantity / Number(structure.piecesPerStage) : 0, productPath: "" }], units, machineCount), scheduleStart)
           .forEach((task) => {
             machineRows.push({
               item: normalize(structure.stage),
@@ -1115,7 +1143,7 @@ export function mountPlanning(records, planning, filters, onSave) {
           issues.push(`${row.item} > ${missingUnit.structure.cutStageCode || missingUnit.structure.stage}: sem tempo teorico`);
           return;
         }
-        machineTasksForSave(createMachinePlan(expansion.items, units, machineCount, row.quantity)).forEach((task) => {
+        machineTasksForSave(createMachinePlan(expansion.items, units, machineCount, row.quantity), scheduleStart).forEach((task) => {
           const structure = task.structure;
           const stagesText = task.stages
             ? `${task.stages.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} palco(s)`
