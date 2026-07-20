@@ -228,11 +228,66 @@ function decimal(value, digits = 2) {
   return value.toLocaleString("pt-BR", { maximumFractionDigits: digits });
 }
 
-function productCutPreview(expansion, units) {
+function splitQuantity(quantity, parts) {
+  const total = Math.max(0, Number(quantity) || 0);
+  if (!total) return [];
+  const isWhole = Math.abs(total - Math.round(total)) < 0.0001;
+  const count = Math.max(1, Math.min(parts, isWhole ? Math.round(total) : parts));
+  if (!isWhole) return Array.from({ length: count }, () => total / count).filter(Boolean);
+  const base = Math.floor(total / count);
+  const remainder = Math.round(total) % count;
+  return Array.from({ length: count }, (_, index) => base + (index < remainder ? 1 : 0)).filter(Boolean);
+}
+
+function createMachinePlan(items, units, machineCount = 14) {
+  const machines = Array.from({ length: Math.max(1, Number(machineCount) || 14) }, (_, index) => ({
+    machine: index + 1,
+    seconds: 0,
+    quantity: 0,
+    tasks: []
+  }));
+  const tasks = items
+    .map((item) => {
+      const unit = cutUnitForStructure(units, item.structure);
+      return {
+        ...item,
+        unit,
+        totalSeconds: unit * item.quantity
+      };
+    })
+    .filter((item) => item.unit && item.quantity > 0)
+    .sort((a, b) => b.totalSeconds - a.totalSeconds);
+
+  tasks.forEach((item) => {
+    splitQuantity(item.quantity, machines.length).forEach((quantity) => {
+      const machine = machines.reduce((best, current) => current.seconds < best.seconds ? current : best, machines[0]);
+      const seconds = item.unit * quantity;
+      const stages = item.structure.piecesPerStage ? quantity / Number(item.structure.piecesPerStage) : 0;
+      const task = {
+        machine: machine.machine,
+        structure: item.structure,
+        productPath: item.productPath,
+        quantity,
+        stages,
+        unit: item.unit,
+        seconds
+      };
+      machine.tasks.push(task);
+      machine.seconds += seconds;
+      machine.quantity += quantity;
+    });
+  });
+
+  return machines;
+}
+
+function productCutPreview(expansion, units, machineCount = 14) {
   if (!expansion.items.length) return "";
   const totalQuantity = expansion.items.reduce((sum, item) => sum + item.quantity, 0);
   const totalStages = expansion.items.reduce((sum, item) => sum + item.stages, 0);
   const totalSeconds = expansion.items.reduce((sum, item) => sum + (cutUnitForStructure(units, item.structure) * item.quantity), 0);
+  const machinePlan = createMachinePlan(expansion.items, units, machineCount);
+  const activeMachines = machinePlan.filter((machine) => machine.tasks.length);
   return `
     <div class="planning-stage-preview">
       <div class="planning-stage-preview-summary">
@@ -258,6 +313,28 @@ function productCutPreview(expansion, units) {
           `;
         }).join("")}
       </div>
+      ${activeMachines.length ? `
+        <div class="planning-machine-preview">
+          <div class="planning-machine-preview-title">
+            <strong>Plano sugerido nas ${number(machinePlan.length)} maquinas</strong>
+            <span>${number(activeMachines.length)} maquina(s) com demanda | balanceado por menor carga acumulada</span>
+          </div>
+          <div class="planning-machine-grid">
+            ${machinePlan.map((machine) => `
+              <div class="planning-machine-card ${machine.tasks.length ? "" : "is-empty"}">
+                <strong>Maquina ${machine.machine}</strong>
+                <span>${secondsToDuration(machine.seconds)}</span>
+                <small>${number(machine.quantity)} un.</small>
+                ${machine.tasks.slice(0, 3).map((task) => {
+                  const stageLabel = [task.structure.cutStageCode, task.structure.stage].filter(Boolean).join(" - ");
+                  return `<em title="${stageLabel}">${stageLabel}: ${number(task.quantity)} un. | ${secondsToDuration(task.seconds)}</em>`;
+                }).join("")}
+                ${machine.tasks.length > 3 ? `<em>+ ${machine.tasks.length - 3} tarefa(s)</em>` : ""}
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      ` : ""}
     </div>
   `;
 }
@@ -496,6 +573,7 @@ function planForm(records, plans, filters) {
   const stages = unique(structures.filter((item) => !isCompoundStructure(item)).map(stageOption));
   const unitsPayload = encodeURIComponent(JSON.stringify(theoreticalUnits(records)));
   const structuresPayload = encodeURIComponent(JSON.stringify(structures));
+  const machineCount = settings.planningConnection.cuttingMachines || 14;
   return `
     <article class="panel planning-form-panel">
       <div class="section-title">
@@ -506,7 +584,7 @@ function planForm(records, plans, filters) {
       </div>
       <datalist id="planning-products">${products.map((item) => `<option value="${item}"></option>`).join("")}</datalist>
       <datalist id="planning-stages">${stages.map((item) => `<option value="${item}"></option>`).join("")}</datalist>
-      <form id="planning-form" class="planning-form" data-theoretical-units="${unitsPayload}" data-product-structures="${structuresPayload}">
+      <form id="planning-form" class="planning-form" data-theoretical-units="${unitsPayload}" data-product-structures="${structuresPayload}" data-machine-count="${machineCount}">
         <div class="planning-form-head">
           <label>Base
             <select name="type">
@@ -642,6 +720,7 @@ export function mountPlanning(records, planning, filters, onSave) {
     if (!formEl || !row) return;
     const units = decodePayload(formEl.dataset.theoreticalUnits, {});
     const structures = decodePayload(formEl.dataset.productStructures, []);
+    const machineCount = Number(formEl.dataset.machineCount || 14);
     const type = formEl.elements.type.value;
     const cutMode = formEl.elements.cutMode?.value || "items";
     const itemInput = row.querySelector("[name='item']");
@@ -661,6 +740,9 @@ export function mountPlanning(records, planning, filters, onSave) {
         note.textContent = structure && unit
           ? `Palco ${structure.cutStageCode || ""} | ${structure.stage} | ${secondsToDuration(unit)} x ${number(quantity)} un. = ${secondsToDuration(total)}`
           : "Palco sem tempo teorico encontrado. Confira o cadastro na estrutura de produtos.";
+      }
+      if (preview && structure && unit) {
+        preview.innerHTML = productCutPreview({ items: [{ structure, quantity, stages: structure.piecesPerStage ? quantity / Number(structure.piecesPerStage) : 0, productPath: "" }], issues: [] }, units, machineCount);
       }
       refreshPlanningTotals();
       return;
@@ -686,7 +768,7 @@ export function mountPlanning(records, planning, filters, onSave) {
         }
       }
       if (preview && expansion.items.length) {
-        preview.innerHTML = productCutPreview(expansion, units);
+        preview.innerHTML = productCutPreview(expansion, units, machineCount);
       }
       refreshPlanningTotals();
       return;
@@ -738,6 +820,7 @@ export function mountPlanning(records, planning, filters, onSave) {
     const form = new FormData(event.currentTarget);
     const units = decodePayload(event.currentTarget.dataset.theoreticalUnits, {});
     const structures = decodePayload(event.currentTarget.dataset.productStructures, []);
+    const machineCount = Number(event.currentTarget.dataset.machineCount || 14);
     const baseType = form.get("type");
     const cutMode = form.get("cutMode");
     let rowsToSave = [...event.currentTarget.querySelectorAll(".planning-item-row")]
@@ -758,26 +841,40 @@ export function mountPlanning(records, planning, filters, onSave) {
     }
     if (baseType === "corte" && cutMode === "stage") {
       const issues = [];
-      rowsToSave = rowsToSave.map((row) => {
+      const machineRows = [];
+      rowsToSave.forEach((row) => {
         const structure = structureForStageSelection(structures, row.item);
         if (!structure) {
           issues.push(`${row.item}: palco nao encontrado na estrutura`);
-          return row;
+          return;
         }
-        return {
-          ...row,
-          item: normalize(structure.stage),
-          observation: [
-            `Lancamento por palco especifico`,
-            structure.cutStageCode ? `Palco: ${structure.cutStageCode}` : "",
-            row.observation
-          ].filter(Boolean).join(" | ")
-        };
+        const unit = cutUnitForStructure(units, structure);
+        if (!unit) {
+          issues.push(`${row.item}: sem tempo teorico`);
+          return;
+        }
+        createMachinePlan([{ structure, quantity: row.quantity, stages: structure.piecesPerStage ? row.quantity / Number(structure.piecesPerStage) : 0, productPath: "" }], units, machineCount)
+          .flatMap((machine) => machine.tasks)
+          .forEach((task) => {
+            machineRows.push({
+              item: normalize(structure.stage),
+              quantity: task.quantity,
+              theoreticalTotalSeconds: task.seconds,
+              observation: [
+                `Lancamento por palco especifico`,
+                `Maquina: ${task.machine}`,
+                structure.cutStageCode ? `Palco: ${structure.cutStageCode}` : "",
+                task.stages ? `${decimal(task.stages)} palco(s)` : "",
+                row.observation
+              ].filter(Boolean).join(" | ")
+            });
+          });
       });
       if (issues.length) {
         alert(`Nao foi possivel salvar o palco especifico:\n${issues.slice(0, 8).join("\n")}`);
         return;
       }
+      rowsToSave = machineRows;
     }
     if (baseType === "corte" && cutMode === "product") {
       const expandedRows = [];
@@ -785,24 +882,25 @@ export function mountPlanning(records, planning, filters, onSave) {
       rowsToSave.forEach((row) => {
         const expansion = expandProductToCutItems(structures, row.item, row.quantity);
         issues.push(...expansion.issues);
-        expansion.items.forEach((item) => {
-          const structure = item.structure;
-          const unit = cutUnitForStructure(units, structure);
-          if (!unit) {
-            issues.push(`${row.item} > ${structure.cutStageCode || structure.stage}: sem tempo teorico`);
-            return;
-          }
-          const stagesText = item.stages
-            ? `${item.stages.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} palco(s)`
+        const missingUnit = expansion.items.find((item) => !cutUnitForStructure(units, item.structure));
+        if (missingUnit) {
+          issues.push(`${row.item} > ${missingUnit.structure.cutStageCode || missingUnit.structure.stage}: sem tempo teorico`);
+          return;
+        }
+        createMachinePlan(expansion.items, units, machineCount).flatMap((machine) => machine.tasks).forEach((task) => {
+          const structure = task.structure;
+          const stagesText = task.stages
+            ? `${task.stages.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} palco(s)`
             : "palcos sem capacidade cadastrada";
           expandedRows.push({
             item: normalize(structure.stage),
-            quantity: item.quantity,
-            theoreticalTotalSeconds: unit * item.quantity,
+            quantity: task.quantity,
+            theoreticalTotalSeconds: task.seconds,
             observation: [
               `Produto pronto: ${row.item}`,
-              item.productPath ? `Componente: ${item.productPath}` : "",
+              task.productPath ? `Componente: ${task.productPath}` : "",
               `Qtd produto: ${number(row.quantity)}`,
+              `Maquina: ${task.machine}`,
               structure.cutStageCode ? `Palco: ${structure.cutStageCode}` : "",
               stagesText,
               row.observation
