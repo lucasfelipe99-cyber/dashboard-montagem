@@ -242,15 +242,17 @@ function shortDate(dateISO) {
   return day && month ? `${day}/${month}` : "";
 }
 
+const PLANNING_PREP_SECONDS = 15 * 60;
+
 function planningStart(dateISO, shift) {
   const today = todayISO();
   const shiftStart = SHIFT_START_SECONDS[normalizeShiftValue(shift)] ?? SHIFT_START_SECONDS["1"];
+  const readyNow = nowSecondsOfDay() + PLANNING_PREP_SECONDS;
   if (!dateISO || dateISO < today) {
-    return { date: today, seconds: nowSecondsOfDay(), movedToNow: true };
+    return { date: today, seconds: readyNow, movedToNow: true };
   }
   if (dateISO === today) {
-    const now = nowSecondsOfDay();
-    return { date: today, seconds: Math.max(shiftStart, now), movedToNow: now > shiftStart };
+    return { date: today, seconds: Math.max(shiftStart, readyNow), movedToNow: readyNow > shiftStart };
   }
   return { date: dateISO, seconds: shiftStart, movedToNow: false };
 }
@@ -516,7 +518,7 @@ function productCutPreview(expansion, units, machineCount = 14, shift = "1", pro
         <div class="planning-machine-preview">
           <div class="planning-machine-preview-title">
             <strong>Plano sugerido nas ${number(machinePlan.length)} maquinas</strong>
-            <span>${number(activeMachines.length)} maquina(s) com demanda | inicio ${formatPlanDateTime(start.date, start.seconds)}${start.movedToNow ? " | ajustado para agora" : ""}</span>
+            <span>${number(activeMachines.length)} maquina(s) com demanda | inicio ${formatPlanDateTime(start.date, start.seconds)}${start.movedToNow ? " | agora + 15 min" : ""}</span>
           </div>
           ${hourlyProductOutput(machinePlan, expansion, start.date, startSeconds, productQuantity)}
           <div class="planning-machine-grid">
