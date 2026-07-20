@@ -27,8 +27,9 @@ function planMatchesFilters(plan, filters) {
   if (filters.source === "Montagem" && plan.type !== "montagem") return false;
   if (filters.source === "Corte" && plan.type !== "corte") return false;
   if (filters.shift && normalizeShiftValue(plan.shift) !== normalizeShiftValue(filters.shift)) return false;
+  if (filters.machine && String(plan.machine || "") !== String(filters.machine)) return false;
   if (filters.product && normalize(plan.item) !== normalize(filters.product)) return false;
-  if (term && !normalize(`${plan.sourceName} ${plan.date} ${plan.shift} ${plan.item} ${plan.observation}`).includes(term)) return false;
+  if (term && !normalize(`${plan.sourceName} ${plan.date} ${plan.shift} ${plan.machine || ""} ${plan.item} ${plan.observation}`).includes(term)) return false;
   return true;
 }
 
@@ -56,11 +57,13 @@ function shiftMatchesSchedule(schedule, selectedShift) {
 function capacityDetails(type, dates, filters = {}) {
   const settings = loadOperationalSettings();
   if (type === "corte") {
-    const machines = settings.planningConnection.cuttingMachines || 14;
+    const machines = filters.machine ? 1 : settings.planningConnection.cuttingMachines || 14;
     const daySeconds = machines * 24 * 3600;
     return {
       seconds: daySeconds * dates.length,
-      formula: `${machines} maquinas x 24h x ${dates.length} dia(s)`,
+      formula: filters.machine
+        ? `Maquina ${filters.machine} x 24h x ${dates.length} dia(s)`
+        : `${machines} maquinas x 24h x ${dates.length} dia(s)`,
       perDay: daySeconds,
       resources: machines
     };

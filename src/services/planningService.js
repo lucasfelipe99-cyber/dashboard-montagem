@@ -28,6 +28,13 @@ function numberValue(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function machineValue(row) {
+  const direct = text(readAny(row, ["Maquina", "Máquina"]));
+  if (direct) return direct;
+  const observation = text(readAny(row, ["Observacao", "ObservaÃ§Ã£o", "Descricao", "DescriÃ§Ã£o"]));
+  return observation.match(/Maquina:\s*([^|]+)/i)?.[1]?.trim() || "";
+}
+
 function normalizePlanRows(rows, type) {
   return rows
     .filter((row) => Object.values(row).some((value) => text(value)))
@@ -42,7 +49,7 @@ function normalizePlanRows(rows, type) {
         sourceName: type === "montagem" ? "Plano Montagem" : "Plano Corte",
         date,
         shift: normalizeShift(readAny(row, ["Turno", "TURNO"])),
-        machine: text(readAny(row, ["Maquina", "Máquina"])),
+        machine: machineValue(row),
         item: normalize(item || (type === "montagem" ? "MONTAGEM" : "CORTE")),
         quantity,
         theoreticalTotalSeconds,

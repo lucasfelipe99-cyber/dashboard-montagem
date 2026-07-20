@@ -138,6 +138,7 @@ function normalizeCorteRecord(row, index) {
     date,
     shift,
     employee,
+    machine,
     product,
     startSeconds,
     endSeconds,

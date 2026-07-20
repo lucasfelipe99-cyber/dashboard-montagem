@@ -65,10 +65,12 @@ function dayCount(records, filters = {}) {
 function factoryCapacitySeconds(records, filters = {}) {
   const settings = loadOperationalSettings();
   const days = dayCount(records, filters);
-  const machines = settings.planningConnection?.cuttingMachines || 14;
-  const cuttingSeconds = machines * 24 * 3600 * days;
+  const includeCutting = !filters.source || filters.source === "Corte";
+  const includeAssembly = !filters.source || filters.source === "Montagem";
+  const machines = filters.machine ? 1 : settings.planningConnection?.cuttingMachines || 14;
+  const cuttingSeconds = includeCutting ? machines * 24 * 3600 * days : 0;
   const assemblers = settings.employeeSchedules.filter((schedule) => normalize(schedule.workType) === "MONTAGEM").length;
-  const assemblySeconds = assemblers * 8 * 3600 * days;
+  const assemblySeconds = includeAssembly && !filters.machine ? assemblers * 8 * 3600 * days : 0;
   return cuttingSeconds + assemblySeconds;
 }
 
