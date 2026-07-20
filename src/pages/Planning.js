@@ -1,7 +1,7 @@
 import { tableShell, renderTable } from "../components/DataTable.js";
 import { loadOperationalSettings } from "../services/settingsService.js";
 import { savePlanRecords } from "../services/planningService.js";
-import { addDaysISO, parseTime, secondsToDuration, todayISO } from "../utils/dateUtils.js";
+import { addDaysISO, nowSecondsOfDay, parseTime, secondsToDuration, todayISO } from "../utils/dateUtils.js";
 import { safeDivide } from "../utils/calculations.js";
 
 const typeLabels = {
@@ -237,6 +237,32 @@ function formatClock(seconds) {
   return `${hours}:${minutes}`;
 }
 
+function shortDate(dateISO) {
+  const [, month, day] = String(dateISO || "").split("-");
+  return day && month ? `${day}/${month}` : "";
+}
+
+function planningStart(dateISO, shift) {
+  const today = todayISO();
+  const shiftStart = SHIFT_START_SECONDS[normalizeShiftValue(shift)] ?? SHIFT_START_SECONDS["1"];
+  if (!dateISO || dateISO < today) {
+    return { date: today, seconds: nowSecondsOfDay(), movedToNow: true };
+  }
+  if (dateISO === today) {
+    const now = nowSecondsOfDay();
+    return { date: today, seconds: Math.max(shiftStart, now), movedToNow: now > shiftStart };
+  }
+  return { date: dateISO, seconds: shiftStart, movedToNow: false };
+}
+
+function dateForPlanSeconds(baseDate, seconds) {
+  return addDaysISO(baseDate, Math.floor(Math.max(0, seconds) / (24 * 3600)));
+}
+
+function formatPlanDateTime(baseDate, seconds) {
+  return `${shortDate(dateForPlanSeconds(baseDate, seconds))} ${formatClock(seconds)}`;
+}
+
 function splitQuantity(quantity, parts) {
   const total = Math.max(0, Number(quantity) || 0);
   if (!total) return [];
@@ -357,7 +383,7 @@ function machineTasksForSave(machinePlan) {
   return [...grouped.values()].sort((a, b) => a.machine - b.machine || a.startSeconds - b.startSeconds);
 }
 
-function machineHourlyRows(machine, startSeconds) {
+function machineHourlyRows(machine, startDate, startSeconds) {
   const availableSeconds = 24 * 3600;
   const bucketCount = Math.max(1, Math.min(24, Math.ceil(machine.seconds / 3600)));
   return Array.from({ length: bucketCount }, (_, hour) => {
@@ -375,19 +401,19 @@ function machineHourlyRows(machine, startSeconds) {
     const used = pieces.length ? Math.min(3600, Math.max(0, machine.seconds - bucketStart)) : 0;
     return `
       <div class="planning-machine-hour ${pieces.length ? "" : "is-empty"}">
-        <b>${formatClock(startSeconds + bucketStart)}-${formatClock(startSeconds + bucketEnd)}</b>
+        <b>${formatPlanDateTime(startDate, startSeconds + bucketStart)}-${formatClock(startSeconds + bucketEnd)}</b>
         <span>${pieces.join(" | ") || "Livre"}</span>
         <small>Usado ${secondsToDuration(used)} | livre ${secondsToDuration(Math.max(0, 3600 - used))}</small>
       </div>
     `;
-  }).join("") || `<div class="planning-machine-hour is-empty"><b>${formatClock(startSeconds)}</b><span>Livre</span><small>${secondsToDuration(availableSeconds)} disponivel</small></div>`;
+  }).join("") || `<div class="planning-machine-hour is-empty"><b>${formatPlanDateTime(startDate, startSeconds)}</b><span>Livre</span><small>${secondsToDuration(availableSeconds)} disponivel</small></div>`;
 }
 
 function structureKey(structure) {
   return `${normalize(structure.cutStageCode)}|${normalize(structure.stage)}`;
 }
 
-function hourlyProductOutput(machinePlan, expansion, startSeconds, productQuantity) {
+function hourlyProductOutput(machinePlan, expansion, startDate, startSeconds, productQuantity) {
   if (!productQuantity) return "";
   const requirements = new Map();
   expansion.items.forEach((item) => {
@@ -426,7 +452,7 @@ function hourlyProductOutput(machinePlan, expansion, startSeconds, productQuanti
       .join(" | ");
     return `
       <div class="planning-hourly-output-row">
-        <b>${formatClock(startSeconds + bucketStart)}-${formatClock(startSeconds + bucketEnd)}</b>
+        <b>${formatPlanDateTime(startDate, startSeconds + bucketStart)}-${formatClock(startSeconds + bucketEnd)}</b>
         <strong>${decimal(Number.isFinite(productUnits) ? productUnits : 0, productUnits < 10 ? 1 : 0)} produto(s)</strong>
         <span>${stageSummary || "Sem corte previsto"}</span>
         <small>${secondsToDuration(usedSeconds)} de maquina usado(s)</small>
@@ -444,9 +470,10 @@ function hourlyProductOutput(machinePlan, expansion, startSeconds, productQuanti
   `;
 }
 
-function productCutPreview(expansion, units, machineCount = 14, shift = "1", productQuantity = 0) {
+function productCutPreview(expansion, units, machineCount = 14, shift = "1", productQuantity = 0, dateISO = todayISO()) {
   if (!expansion.items.length) return "";
-  const startSeconds = SHIFT_START_SECONDS[normalizeShiftValue(shift)] ?? SHIFT_START_SECONDS["1"];
+  const start = planningStart(dateISO, shift);
+  const startSeconds = start.seconds;
   const availableSeconds = 24 * 3600;
   const totalQuantity = expansion.items.reduce((sum, item) => sum + item.quantity, 0);
   const totalStages = expansion.items.reduce((sum, item) => sum + item.stages, 0);
@@ -489,9 +516,9 @@ function productCutPreview(expansion, units, machineCount = 14, shift = "1", pro
         <div class="planning-machine-preview">
           <div class="planning-machine-preview-title">
             <strong>Plano sugerido nas ${number(machinePlan.length)} maquinas</strong>
-            <span>${number(activeMachines.length)} maquina(s) com demanda | minimo de 1 produto equivalente por hora quando houver capacidade</span>
+            <span>${number(activeMachines.length)} maquina(s) com demanda | inicio ${formatPlanDateTime(start.date, start.seconds)}${start.movedToNow ? " | ajustado para agora" : ""}</span>
           </div>
-          ${hourlyProductOutput(machinePlan, expansion, startSeconds, productQuantity)}
+          ${hourlyProductOutput(machinePlan, expansion, start.date, startSeconds, productQuantity)}
           <div class="planning-machine-grid">
             ${machinePlan.map((machine) => `
               <div class="planning-machine-card ${machine.tasks.length ? "" : "is-empty"}">
@@ -499,7 +526,7 @@ function productCutPreview(expansion, units, machineCount = 14, shift = "1", pro
                 <span>Ocupado ${secondsToDuration(machine.seconds)}</span>
                 <small>Livre ${secondsToDuration(Math.max(0, availableSeconds - machine.seconds))} de 24:00:00</small>
                 <div class="planning-machine-hours">
-                  ${machineHourlyRows(machine, startSeconds)}
+                  ${machineHourlyRows(machine, start.date, startSeconds)}
                 </div>
               </div>
             `).join("")}
@@ -901,6 +928,7 @@ export function mountPlanning(records, planning, filters, onSave) {
     const structures = decodePayload(formEl.dataset.productStructures, []);
     const machineCount = Number(formEl.elements.machineCount?.value || formEl.dataset.machineCount || 14);
     const shift = formEl.elements.shift?.value || "1";
+    const planDate = formEl.elements.date?.value || todayISO();
     const type = formEl.elements.type.value;
     const cutMode = formEl.elements.cutMode?.value || "items";
     const itemInput = row.querySelector("[name='item']");
@@ -922,7 +950,7 @@ export function mountPlanning(records, planning, filters, onSave) {
           : "Palco sem tempo teorico encontrado. Confira o cadastro na estrutura de produtos.";
       }
       if (preview && structure && unit) {
-        preview.innerHTML = productCutPreview({ items: [{ structure, quantity, stages: structure.piecesPerStage ? quantity / Number(structure.piecesPerStage) : 0, productPath: "" }], issues: [] }, units, machineCount, shift);
+        preview.innerHTML = productCutPreview({ items: [{ structure, quantity, stages: structure.piecesPerStage ? quantity / Number(structure.piecesPerStage) : 0, productPath: "" }], issues: [] }, units, machineCount, shift, 0, planDate);
       }
       refreshPlanningTotals();
       return;
@@ -948,7 +976,7 @@ export function mountPlanning(records, planning, filters, onSave) {
         }
       }
       if (preview && expansion.items.length) {
-        preview.innerHTML = productCutPreview(expansion, units, machineCount, shift, quantity);
+        preview.innerHTML = productCutPreview(expansion, units, machineCount, shift, quantity, planDate);
       }
       refreshPlanningTotals();
       return;
@@ -971,6 +999,7 @@ export function mountPlanning(records, planning, filters, onSave) {
     document.querySelectorAll(".planning-item-row").forEach(refreshTheoreticalTotal);
   };
   formEl?.elements.type.addEventListener("change", refreshAllRows);
+  formEl?.elements.date.addEventListener("change", refreshAllRows);
   formEl?.elements.cutMode?.addEventListener("change", refreshAllRows);
   formEl?.elements.shift.addEventListener("change", refreshAllRows);
   formEl?.elements.machineCount?.addEventListener("input", refreshAllRows);
@@ -1012,7 +1041,8 @@ export function mountPlanning(records, planning, filters, onSave) {
     const machineCount = Number(form.get("machineCount") || event.currentTarget.dataset.machineCount || 14);
     const baseType = form.get("type");
     const cutMode = form.get("cutMode");
-    const scheduleStart = SHIFT_START_SECONDS[normalizeShiftValue(form.get("shift"))] ?? SHIFT_START_SECONDS["1"];
+    const start = planningStart(form.get("date"), form.get("shift"));
+    const scheduleStart = start.seconds;
     let rowsToSave = [...event.currentTarget.querySelectorAll(".planning-item-row")]
       .map((row) => ({
         item: normalize(row.querySelector("[name='item']").value),
@@ -1047,12 +1077,13 @@ export function mountPlanning(records, planning, filters, onSave) {
           .forEach((task) => {
             machineRows.push({
               item: normalize(structure.stage),
+              date: dateForPlanSeconds(start.date, scheduleStart + task.startSeconds),
               quantity: task.quantity,
               theoreticalTotalSeconds: task.seconds,
               observation: [
                 `Lancamento por palco especifico`,
                 `Maquina: ${task.machine}`,
-                `Horario sugerido: ${formatClock(scheduleStart + task.startSeconds)}-${formatClock(scheduleStart + task.endSeconds)}`,
+                `Horario sugerido: ${formatPlanDateTime(start.date, scheduleStart + task.startSeconds)}-${formatPlanDateTime(start.date, scheduleStart + task.endSeconds)}`,
                 structure.cutStageCode ? `Palco: ${structure.cutStageCode}` : "",
                 task.stages ? `${decimal(task.stages)} palco(s)` : "",
                 row.observation
@@ -1084,6 +1115,7 @@ export function mountPlanning(records, planning, filters, onSave) {
             : "palcos sem capacidade cadastrada";
           expandedRows.push({
             item: normalize(structure.stage),
+            date: dateForPlanSeconds(start.date, scheduleStart + task.startSeconds),
             quantity: task.quantity,
             theoreticalTotalSeconds: task.seconds,
             observation: [
@@ -1091,7 +1123,7 @@ export function mountPlanning(records, planning, filters, onSave) {
               task.productPath ? `Componente: ${task.productPath}` : "",
               `Qtd produto: ${number(row.quantity)}`,
               `Maquina: ${task.machine}`,
-              `Horario sugerido: ${formatClock(scheduleStart + task.startSeconds)}-${formatClock(scheduleStart + task.endSeconds)}`,
+              `Horario sugerido: ${formatPlanDateTime(start.date, scheduleStart + task.startSeconds)}-${formatPlanDateTime(start.date, scheduleStart + task.endSeconds)}`,
               structure.cutStageCode ? `Palco: ${structure.cutStageCode}` : "",
               stagesText,
               row.observation
@@ -1112,7 +1144,7 @@ export function mountPlanning(records, planning, filters, onSave) {
       }
       await savePlanRecords(rowsToSave.map((row) => ({
         type: baseType,
-        date: form.get("date"),
+        date: row.date || start.date,
         shift: form.get("shift"),
         item: row.item,
         quantity: row.quantity,
