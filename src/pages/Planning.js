@@ -10,6 +10,7 @@ const typeLabels = {
 };
 
 const SHIFT_OPTIONS = ["1", "2", "3"];
+const SHIFT_START_SECONDS = { "1": 5 * 3600, "2": 14 * 3600, "3": 21 * 3600 };
 const clean = (value) => String(value ?? "").trim();
 const normalize = (value) => clean(value).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
 const normalizeShiftValue = (value) => normalize(value).match(/[123]/)?.[0] || clean(value);
@@ -228,6 +229,14 @@ function decimal(value, digits = 2) {
   return value.toLocaleString("pt-BR", { maximumFractionDigits: digits });
 }
 
+function formatClock(seconds) {
+  const daySeconds = 24 * 3600;
+  const total = ((Math.round(seconds) % daySeconds) + daySeconds) % daySeconds;
+  const hours = String(Math.floor(total / 3600)).padStart(2, "0");
+  const minutes = String(Math.floor((total % 3600) / 60)).padStart(2, "0");
+  return `${hours}:${minutes}`;
+}
+
 function splitQuantity(quantity, parts) {
   const total = Math.max(0, Number(quantity) || 0);
   if (!total) return [];
@@ -278,11 +287,48 @@ function createMachinePlan(items, units, machineCount = 14) {
     });
   });
 
+  machines.forEach((machine) => {
+    let cursor = 0;
+    machine.tasks.forEach((task) => {
+      task.startSeconds = cursor;
+      task.endSeconds = cursor + task.seconds;
+      cursor = task.endSeconds;
+    });
+  });
+
   return machines;
 }
 
-function productCutPreview(expansion, units, machineCount = 14) {
+function machineHourlyRows(machine, startSeconds) {
+  const availableSeconds = 24 * 3600;
+  const bucketCount = Math.max(1, Math.min(24, Math.ceil(machine.seconds / 3600)));
+  return Array.from({ length: bucketCount }, (_, hour) => {
+    const bucketStart = hour * 3600;
+    const bucketEnd = bucketStart + 3600;
+    const pieces = machine.tasks
+      .map((task) => {
+        const overlap = Math.max(0, Math.min(task.endSeconds, bucketEnd) - Math.max(task.startSeconds, bucketStart));
+        if (!overlap) return null;
+        const quantity = task.seconds ? task.quantity * (overlap / task.seconds) : 0;
+        const stageLabel = [task.structure.cutStageCode, task.structure.stage].filter(Boolean).join(" - ");
+        return `${stageLabel}: ${decimal(quantity, quantity < 1 ? 2 : 0)} un.`;
+      })
+      .filter(Boolean);
+    const used = pieces.length ? Math.min(3600, Math.max(0, machine.seconds - bucketStart)) : 0;
+    return `
+      <div class="planning-machine-hour ${pieces.length ? "" : "is-empty"}">
+        <b>${formatClock(startSeconds + bucketStart)}-${formatClock(startSeconds + bucketEnd)}</b>
+        <span>${pieces.join(" | ") || "Livre"}</span>
+        <small>Usado ${secondsToDuration(used)} | livre ${secondsToDuration(Math.max(0, 3600 - used))}</small>
+      </div>
+    `;
+  }).join("") || `<div class="planning-machine-hour is-empty"><b>${formatClock(startSeconds)}</b><span>Livre</span><small>${secondsToDuration(availableSeconds)} disponivel</small></div>`;
+}
+
+function productCutPreview(expansion, units, machineCount = 14, shift = "1") {
   if (!expansion.items.length) return "";
+  const startSeconds = SHIFT_START_SECONDS[normalizeShiftValue(shift)] ?? SHIFT_START_SECONDS["1"];
+  const availableSeconds = 24 * 3600;
   const totalQuantity = expansion.items.reduce((sum, item) => sum + item.quantity, 0);
   const totalStages = expansion.items.reduce((sum, item) => sum + item.stages, 0);
   const totalSeconds = expansion.items.reduce((sum, item) => sum + (cutUnitForStructure(units, item.structure) * item.quantity), 0);
@@ -323,13 +369,11 @@ function productCutPreview(expansion, units, machineCount = 14) {
             ${machinePlan.map((machine) => `
               <div class="planning-machine-card ${machine.tasks.length ? "" : "is-empty"}">
                 <strong>Maquina ${machine.machine}</strong>
-                <span>${secondsToDuration(machine.seconds)}</span>
-                <small>${number(machine.quantity)} un.</small>
-                ${machine.tasks.slice(0, 3).map((task) => {
-                  const stageLabel = [task.structure.cutStageCode, task.structure.stage].filter(Boolean).join(" - ");
-                  return `<em title="${stageLabel}">${stageLabel}: ${number(task.quantity)} un. | ${secondsToDuration(task.seconds)}</em>`;
-                }).join("")}
-                ${machine.tasks.length > 3 ? `<em>+ ${machine.tasks.length - 3} tarefa(s)</em>` : ""}
+                <span>Ocupado ${secondsToDuration(machine.seconds)}</span>
+                <small>Livre ${secondsToDuration(Math.max(0, availableSeconds - machine.seconds))} de 24:00:00</small>
+                <div class="planning-machine-hours">
+                  ${machineHourlyRows(machine, startSeconds)}
+                </div>
               </div>
             `).join("")}
           </div>
@@ -606,6 +650,9 @@ function planForm(records, plans, filters) {
               <option value="stage">Palco especifico</option>
             </select>
           </label>
+          <label>Maquinas usadas
+            <input type="number" min="1" max="${machineCount}" step="1" name="machineCount" value="${machineCount}">
+          </label>
           <div class="filter-actions">
             <button class="button" type="button" data-action="add-plan-row">+ Linha</button>
           </div>
@@ -720,7 +767,8 @@ export function mountPlanning(records, planning, filters, onSave) {
     if (!formEl || !row) return;
     const units = decodePayload(formEl.dataset.theoreticalUnits, {});
     const structures = decodePayload(formEl.dataset.productStructures, []);
-    const machineCount = Number(formEl.dataset.machineCount || 14);
+    const machineCount = Number(formEl.elements.machineCount?.value || formEl.dataset.machineCount || 14);
+    const shift = formEl.elements.shift?.value || "1";
     const type = formEl.elements.type.value;
     const cutMode = formEl.elements.cutMode?.value || "items";
     const itemInput = row.querySelector("[name='item']");
@@ -742,7 +790,7 @@ export function mountPlanning(records, planning, filters, onSave) {
           : "Palco sem tempo teorico encontrado. Confira o cadastro na estrutura de produtos.";
       }
       if (preview && structure && unit) {
-        preview.innerHTML = productCutPreview({ items: [{ structure, quantity, stages: structure.piecesPerStage ? quantity / Number(structure.piecesPerStage) : 0, productPath: "" }], issues: [] }, units, machineCount);
+        preview.innerHTML = productCutPreview({ items: [{ structure, quantity, stages: structure.piecesPerStage ? quantity / Number(structure.piecesPerStage) : 0, productPath: "" }], issues: [] }, units, machineCount, shift);
       }
       refreshPlanningTotals();
       return;
@@ -768,7 +816,7 @@ export function mountPlanning(records, planning, filters, onSave) {
         }
       }
       if (preview && expansion.items.length) {
-        preview.innerHTML = productCutPreview(expansion, units, machineCount);
+        preview.innerHTML = productCutPreview(expansion, units, machineCount, shift);
       }
       refreshPlanningTotals();
       return;
@@ -792,6 +840,8 @@ export function mountPlanning(records, planning, filters, onSave) {
   };
   formEl?.elements.type.addEventListener("change", refreshAllRows);
   formEl?.elements.cutMode?.addEventListener("change", refreshAllRows);
+  formEl?.elements.shift.addEventListener("change", refreshAllRows);
+  formEl?.elements.machineCount?.addEventListener("input", refreshAllRows);
   formEl?.querySelector("[data-plan-rows]")?.addEventListener("input", (event) => {
     const row = event.target.closest(".planning-item-row");
     if (row && ["item", "quantity"].includes(event.target.name)) refreshTheoreticalTotal(row);
@@ -820,9 +870,10 @@ export function mountPlanning(records, planning, filters, onSave) {
     const form = new FormData(event.currentTarget);
     const units = decodePayload(event.currentTarget.dataset.theoreticalUnits, {});
     const structures = decodePayload(event.currentTarget.dataset.productStructures, []);
-    const machineCount = Number(event.currentTarget.dataset.machineCount || 14);
+    const machineCount = Number(form.get("machineCount") || event.currentTarget.dataset.machineCount || 14);
     const baseType = form.get("type");
     const cutMode = form.get("cutMode");
+    const scheduleStart = SHIFT_START_SECONDS[normalizeShiftValue(form.get("shift"))] ?? SHIFT_START_SECONDS["1"];
     let rowsToSave = [...event.currentTarget.querySelectorAll(".planning-item-row")]
       .map((row) => ({
         item: normalize(row.querySelector("[name='item']").value),
@@ -863,6 +914,7 @@ export function mountPlanning(records, planning, filters, onSave) {
               observation: [
                 `Lancamento por palco especifico`,
                 `Maquina: ${task.machine}`,
+                `Horario sugerido: ${formatClock(scheduleStart + task.startSeconds)}-${formatClock(scheduleStart + task.endSeconds)}`,
                 structure.cutStageCode ? `Palco: ${structure.cutStageCode}` : "",
                 task.stages ? `${decimal(task.stages)} palco(s)` : "",
                 row.observation
@@ -901,6 +953,7 @@ export function mountPlanning(records, planning, filters, onSave) {
               task.productPath ? `Componente: ${task.productPath}` : "",
               `Qtd produto: ${number(row.quantity)}`,
               `Maquina: ${task.machine}`,
+              `Horario sugerido: ${formatClock(scheduleStart + task.startSeconds)}-${formatClock(scheduleStart + task.endSeconds)}`,
               structure.cutStageCode ? `Palco: ${structure.cutStageCode}` : "",
               stagesText,
               row.observation
