@@ -311,6 +311,22 @@ function cutUnitForStructure(units, structure) {
   return unitFor(units, "corte", structure.stage, structure.cutStageCode) || structureTime(structure, "cutUnitTime");
 }
 
+function stageOption(structure) {
+  return structure.cutStageCode ? `${structure.cutStageCode} - ${structure.stage}` : structure.stage;
+}
+
+function structureForStageSelection(structures, value) {
+  const key = normalize(value);
+  return structures
+    .filter((item) => !isCompoundStructure(item))
+    .find((item) => {
+      const code = normalize(item.cutStageCode);
+      const stage = normalize(item.stage);
+      const option = normalize(stageOption(item));
+      return key === code || key === stage || key === option || option.includes(key) || key.includes(stage);
+    });
+}
+
 function assemblyUnitForProduct(units, structures, product, trail = []) {
   const productKey = normalize(product);
   if (trail.includes(productKey)) return 0;
@@ -412,7 +428,7 @@ function planningItemRow() {
   return `
     <tr class="planning-item-row">
       <td>
-        <input name="item" list="planning-items" placeholder="Produto pronto" required>
+        <input name="item" list="planning-products" placeholder="Produto pronto" required>
         <small data-theoretical-note>Escolha um produto pronto da estrutura.</small>
       </td>
       <td><input type="number" min="0" step="1" name="quantity" required></td>
@@ -427,6 +443,7 @@ function planForm(records, plans, filters) {
   const settings = loadOperationalSettings();
   const structures = settings.productStructures || [];
   const products = unique(structures.map((item) => item.product));
+  const stages = unique(structures.filter((item) => !isCompoundStructure(item)).map(stageOption));
   const unitsPayload = encodeURIComponent(JSON.stringify(theoreticalUnits(records)));
   const structuresPayload = encodeURIComponent(JSON.stringify(structures));
   return `
@@ -437,7 +454,8 @@ function planForm(records, plans, filters) {
           <p>Informe o volume planejado do dia. O lancamento sera enviado para a planilha de planejamento.</p>
         </div>
       </div>
-      <datalist id="planning-items">${products.map((item) => `<option value="${item}"></option>`).join("")}</datalist>
+      <datalist id="planning-products">${products.map((item) => `<option value="${item}"></option>`).join("")}</datalist>
+      <datalist id="planning-stages">${stages.map((item) => `<option value="${item}"></option>`).join("")}</datalist>
       <form id="planning-form" class="planning-form" data-theoretical-units="${unitsPayload}" data-product-structures="${structuresPayload}">
         <div class="planning-form-head">
           <label>Base
@@ -456,7 +474,8 @@ function planForm(records, plans, filters) {
           </label>
           <label>Modo do corte
             <select name="cutMode">
-              <option value="product">Produto pronto</option>
+              <option value="product">Produto completo</option>
+              <option value="stage">Palco especifico</option>
             </select>
           </label>
           <div class="filter-actions">
@@ -467,7 +486,7 @@ function planForm(records, plans, filters) {
           <table class="planning-entry-table">
             <thead>
               <tr>
-                <th>Produto pronto</th>
+                <th data-planning-item-heading>Produto pronto</th>
                 <th>Qtd planejada</th>
                 <th>Tempo teorico total</th>
                 <th>Observacao</th>
@@ -539,6 +558,22 @@ export function mountPlanning(records, planning, filters, onSave) {
   ], { height: "340px" });
 
   const formEl = document.querySelector("#planning-form");
+  const refreshItemMode = () => {
+    if (!formEl) return;
+    const type = formEl.elements.type.value;
+    const cutMode = formEl.elements.cutMode?.value || "product";
+    const stageMode = type === "corte" && cutMode === "stage";
+    document.querySelector("[data-planning-item-heading]").textContent = stageMode ? "Palco especifico" : "Produto pronto";
+    formEl.querySelectorAll(".planning-item-row [name='item']").forEach((input) => {
+      input.setAttribute("list", stageMode ? "planning-stages" : "planning-products");
+      input.setAttribute("placeholder", stageMode ? "Palco especifico" : "Produto pronto");
+    });
+    formEl.querySelectorAll("[data-theoretical-note]").forEach((note) => {
+      if (!note.closest(".planning-item-row")?.querySelector("[name='item']").value) {
+        note.textContent = stageMode ? "Escolha um palco especifico da estrutura." : "Escolha um produto pronto da estrutura.";
+      }
+    });
+  };
   const refreshPlanningTotals = () => {
     const rows = [...document.querySelectorAll(".planning-item-row")];
     const validRows = rows.filter((row) => row.querySelector("[name='item']").value && row.querySelector("[name='quantity']").value);
@@ -559,6 +594,20 @@ export function mountPlanning(records, planning, filters, onSave) {
     const totalInput = row.querySelector("[name='theoreticalTotal']");
     const item = normalize(itemInput?.value);
     const quantity = Number(quantityInput?.value || 0);
+    if (type === "corte" && cutMode === "stage" && item && quantity) {
+      const structure = structureForStageSelection(structures, item);
+      const unit = structure ? cutUnitForStructure(units, structure) : 0;
+      const total = unit * quantity;
+      totalInput.value = total ? secondsToDuration(total) : "";
+      const note = row.querySelector("[data-theoretical-note]");
+      if (note) {
+        note.textContent = structure && unit
+          ? `Palco ${structure.cutStageCode || ""} | ${structure.stage} | ${secondsToDuration(unit)} x ${number(quantity)} un. = ${secondsToDuration(total)}`
+          : "Palco sem tempo teorico encontrado. Confira o cadastro na estrutura de produtos.";
+      }
+      refreshPlanningTotals();
+      return;
+    }
     if (type === "corte" && cutMode === "product" && item && quantity) {
       const expansion = expandProductToCutItems(structures, item, quantity);
       const missingUnits = [];
@@ -596,6 +645,7 @@ export function mountPlanning(records, planning, filters, onSave) {
     refreshPlanningTotals();
   };
   const refreshAllRows = () => {
+    refreshItemMode();
     document.querySelectorAll(".planning-item-row").forEach(refreshTheoreticalTotal);
   };
   formEl?.elements.type.addEventListener("change", refreshAllRows);
@@ -618,6 +668,7 @@ export function mountPlanning(records, planning, filters, onSave) {
   });
   formEl?.querySelector("[data-action='add-plan-row']")?.addEventListener("click", () => {
     formEl.querySelector("[data-plan-rows]")?.insertAdjacentHTML("beforeend", planningItemRow());
+    refreshItemMode();
     refreshPlanningTotals();
   });
   refreshAllRows();
@@ -644,6 +695,29 @@ export function mountPlanning(records, planning, filters, onSave) {
     if (rowsToSave.some((row) => !row.item || !row.quantity || !row.theoreticalTotalSeconds)) {
       alert("Preencha produto/tipo e quantidade em todas as linhas. O tempo teorico precisa ser calculado automaticamente.");
       return;
+    }
+    if (baseType === "corte" && cutMode === "stage") {
+      const issues = [];
+      rowsToSave = rowsToSave.map((row) => {
+        const structure = structureForStageSelection(structures, row.item);
+        if (!structure) {
+          issues.push(`${row.item}: palco nao encontrado na estrutura`);
+          return row;
+        }
+        return {
+          ...row,
+          item: normalize(structure.stage),
+          observation: [
+            `Lancamento por palco especifico`,
+            structure.cutStageCode ? `Palco: ${structure.cutStageCode}` : "",
+            row.observation
+          ].filter(Boolean).join(" | ")
+        };
+      });
+      if (issues.length) {
+        alert(`Nao foi possivel salvar o palco especifico:\n${issues.slice(0, 8).join("\n")}`);
+        return;
+      }
     }
     if (baseType === "corte" && cutMode === "product") {
       const expandedRows = [];
