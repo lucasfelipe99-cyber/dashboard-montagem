@@ -14,7 +14,8 @@ const HEADERS = [
   "Tempo Teorico Total",
   "Observacao",
   "Criado em",
-  "Atualizado em"
+  "Atualizado em",
+  "Maquina"
 ];
 
 function doPost(event) {
@@ -45,7 +46,8 @@ function saveRecord_(payload) {
     payload.tempoTeoricoTotal || "00:00:00",
     payload.observacao || "",
     now,
-    now
+    now,
+    payload.maquina || ""
   ];
 
   const rowIndex = findRowById_(sheet, id);

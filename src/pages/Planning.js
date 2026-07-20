@@ -884,6 +884,7 @@ export function mountPlanning(records, planning, filters, onSave) {
     { title: "Data", field: "date", headerFilter: true },
     { title: "Base", field: "sourceName", headerFilter: true },
     { title: "Turno", field: "shift", headerFilter: true },
+    { title: "Maquina", field: "machine", headerFilter: true },
     { title: "Produto / Tipo", field: "item", headerFilter: true },
     { title: "Qtd planejada", field: "quantity", formatter: (cell) => number(cell.getValue()), hozAlign: "right" },
     { title: "Tempo teorico", field: "theoreticalTotalSeconds", formatter: (cell) => secondsToDuration(cell.getValue()) },
@@ -1080,6 +1081,7 @@ export function mountPlanning(records, planning, filters, onSave) {
             machineRows.push({
               item: normalize(structure.stage),
               date: dateForPlanSeconds(start.date, scheduleStart + task.startSeconds),
+              machine: task.machine,
               quantity: task.quantity,
               theoreticalTotalSeconds: task.seconds,
               observation: [
@@ -1118,6 +1120,7 @@ export function mountPlanning(records, planning, filters, onSave) {
           expandedRows.push({
             item: normalize(structure.stage),
             date: dateForPlanSeconds(start.date, scheduleStart + task.startSeconds),
+            machine: task.machine,
             quantity: task.quantity,
             theoreticalTotalSeconds: task.seconds,
             observation: [
@@ -1148,6 +1151,7 @@ export function mountPlanning(records, planning, filters, onSave) {
         type: baseType,
         date: row.date || start.date,
         shift: form.get("shift"),
+        machine: row.machine || "",
         item: row.item,
         quantity: row.quantity,
         theoreticalTotalSeconds: row.theoreticalTotalSeconds,

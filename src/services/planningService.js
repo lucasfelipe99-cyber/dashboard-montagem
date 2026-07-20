@@ -42,6 +42,7 @@ function normalizePlanRows(rows, type) {
         sourceName: type === "montagem" ? "Plano Montagem" : "Plano Corte",
         date,
         shift: normalizeShift(readAny(row, ["Turno", "TURNO"])),
+        machine: text(readAny(row, ["Maquina", "Máquina"])),
         item: normalize(item || (type === "montagem" ? "MONTAGEM" : "CORTE")),
         quantity,
         theoreticalTotalSeconds,
@@ -103,6 +104,7 @@ export async function savePlanRecords(records) {
     tipoBase: record.type,
     data: record.date,
     turno: record.shift,
+    maquina: record.machine || "",
     item: record.item,
     quantidadePlanejada: record.quantity,
     tempoTeoricoTotal: secondsToDuration(
