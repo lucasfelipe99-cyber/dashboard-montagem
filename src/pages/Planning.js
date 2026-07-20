@@ -768,6 +768,11 @@ function capacityMetricLane(label, value, capacity, color, detail, isCapacity = 
 }
 
 function capacityChartGroup(row) {
+  const plannedConsumption = Math.min(row.plannedSeconds, row.capacitySeconds);
+  const plannedOverflow = Math.max(0, row.plannedSeconds - row.capacitySeconds);
+  const plannedDetail = plannedOverflow
+    ? `100% da capacidade | demanda ${secondsToDuration(row.plannedSeconds)} | excedente ${secondsToDuration(plannedOverflow)}`
+    : `${formatPercent(row.capacityUse)} da capacidade`;
   return `
     <section class="capacity-group">
       <div class="capacity-group-header">
@@ -775,7 +780,7 @@ function capacityChartGroup(row) {
         <span>${row.capacityFormula}</span>
       </div>
       ${capacityMetricLane("Capacidade", row.capacitySeconds, row.capacitySeconds, "#d9e2ec", "100% disponivel", true)}
-      ${capacityMetricLane("Plano", row.plannedSeconds, row.capacitySeconds, "#f59e0b", `${formatPercent(row.capacityUse)} da capacidade`)}
+      ${capacityMetricLane("Plano", plannedConsumption, row.capacitySeconds, "#f59e0b", plannedDetail)}
       ${capacityMetricLane("Realizado", row.actualSeconds, row.capacitySeconds, "#0f5f8f", `${formatPercent(row.actualShare)} do realizado total | ${formatPercent(row.actualCapacityUse)} da capacidade`)}
     </section>
   `;
